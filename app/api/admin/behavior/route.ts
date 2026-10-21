@@ -1,3 +1,4 @@
+import { filterCategory } from "@/lib/metrics-filter-category";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
@@ -49,12 +50,12 @@ export async function GET(request: Request) {
     }
   }
   const gymFunnel = [...byGym.values()].map(row => ({ gymId: row.gymId, name: row.name, reportEmail: row.reportEmail, opens: row.opens.size, favorites: row.favorites.size, compares: row.compares.size, dayPassClicks: row.dayPassClicks.size, websiteVisits: row.websiteVisits.size, confirmedClaims: row.confirmedClaims.size, signups: row.signups.size, membershipClicks: row.membershipClicks.size, confirmedMemberships: row.confirmedMemberships.size, membershipSignups: row.membershipSignups.size, claimUsers: [...(claimUsersByGym.get(row.gymId)?.values() || [])].filter(user => user.clicks > 0).map(user => ({ email: user.email, clicks: user.clicks, clickTimestamps: user.clickTimestamps, status: user.confirmed > 0 ? "confirmed" : user.declined > 0 ? "declined" : "unsure" })).sort((a, b) => b.clicks - a.clicks || a.email.localeCompare(b.email)) }));
-  const gymTypes = new Set(["Open", "Personal training gym", "Group training gym", "Specialty gym/studio"]);
-  const equipmentFilters = new Set(["Squat rack", "Power rack", "Smith machine", "Bench press", "Deadlift platform", "Olympic lifting platform", "Hack squat", "Pendulum squat", "Belt squat", "Leg press", "Cable station", "Pec deck", "Hip thrust machine", "Dumbbells 120+ lb"]);
-  const amenityFilters = new Set(["Sauna", "Steam room", "Pool", "Showers", "Locker rooms", "Basketball court", "Turf area", "Group classes", "Personal training", "Childcare", "Parking", "24/7 access", "Women's-only area"]);
   const filterCategories = ["Distance", "Day-pass price", "Membership price", "Gym type", "Equipment", "Amenities"] as const;
   const filterUsers = new Map<string, Set<string>>(filterCategories.map(category => [category, new Set<string>()]));
-  for (const event of events.filter(event => event.eventType === "FILTER_CHANGED")) { const data = event.metadata as Record<string, unknown> | null; const control = typeof data?.control === "string" ? data.control : ""; const filter = typeof data?.filter === "string" ? data.filter : ""; const category = control === "Distance" ? "Distance" : control === "Day-pass price" ? "Day-pass price" : control === "Membership price" ? "Membership price" : control === "Equipment" ? "Equipment" : control === "Amenities" ? "Amenities" : gymTypes.has(filter) ? "Gym type" : equipmentFilters.has(filter) ? "Equipment" : amenityFilters.has(filter) ? "Amenities" : null; if (category) filterUsers.get(category)!.add(actorFor(event)); }
+  for (const event of events.filter(event => event.eventType === "FILTER_CHANGED")) {
+    const category = filterCategory(event.metadata);
+    if (category) filterUsers.get(category)!.add(actorFor(event));
+  }
   const usersByDay = new Map<string, number>(); for (const user of userDates) { const day = user.createdAt.toISOString().slice(0, 10); usersByDay.set(day, (usersByDay.get(day) || 0) + 1); }
   const today = new Date().toISOString().slice(0, 10);
   let cumulativeUsers = 0;

@@ -66,3 +66,27 @@ The apply command copies each referenced source object to R2, stores a SHA-256 c
 metadata, verifies the destination size and checksum metadata, and writes a resumable local manifest.
 Database URLs are updated only if every referenced file verifies successfully. The manifest is ignored
 by Git and must be stored securely with the database backup until the rollback window closes.
+
+### Metrics workbook layout
+
+The Google Sheet and Excel export use the same section-based layout: Overview,
+Users, Gym claim log, Landing-page demand, Financial Metrics, and separate tabs
+for the tables and growth series within those sections. Start here explains gym
+search, whole-table sorting, filter views, reporting periods, and refresh behavior.
+Gym fields lead the relevant detail tables; User gym access has one row per
+assignment so multi-gym accounts can be filtered by an exact gym name. Daily
+supporting reports, raw events, and audit notes are retained in hidden tabs.
+
+Each sync preserves the IDs of renamed managed tabs, orders the managed tabs,
+freezes headers and the first column, applies filters and alternating rows, and
+formats Google Sheets dates as native dates and money as USD. Existing custom
+tabs are left alone. Managed data and formatting are regenerated on refresh;
+keep handwritten notes in a separate custom tab. Summaries cover all retained
+history and growth series are cumulative UTC end-of-day snapshots, not additive
+daily counts. Raw records cannot restore activity removed by a metrics reset.
+
+Run `node scripts/test-metrics-workbook.cjs` for isolated workbook and Google
+request tests (no database or Google access required). To apply changes to the
+live Sheet, deploy the updated sync code and run the existing authenticated
+`/api/cron/google-sheets` route, or wait for its scheduled run. Google service
+account configuration is required in that environment.

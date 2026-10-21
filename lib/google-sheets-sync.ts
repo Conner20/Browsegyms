@@ -52,7 +52,14 @@ async function googleRequest<T>(url: string, token: string, init?: RequestInit):
   return response.status === 204 ? undefined as T : await response.json() as T;
 }
 
-type SheetValues = { title: string; values: (string | number | boolean)[][]; rows: number; columns: number };
+type SheetValues = { title: string; values: (string | number | boolean)[][]; rows: number; columns: number; hidden: boolean; widths: number[]; hiddenColumns: number[]; moneyRows: number[]; formats: ({ type: string; pattern: string } | null)[] };
+
+// Reuse existing tab IDs so bookmarks and saved filter views survive the migration.
+const renamedTabs: Record<string, string> = {
+  "Gym demand": "Gym demand funnel",
+  "Claim activity": "Claim activity log",
+  "Gym claims": "Gym claim log",
+};
 
 function cellValue(cell: ExcelJS.Cell): string | number | boolean {
   const value = cell.value;
@@ -66,15 +73,29 @@ function worksheetValues(workbook: ExcelJS.Workbook): SheetValues[] {
   return workbook.worksheets.map(sheet => {
     const columns = Math.max(1, sheet.columnCount);
     const values: (string | number | boolean)[][] = [];
+    const headers = Array.from({ length: columns }, (_, index) => sheet.getRow(1).getCell(index + 1).text);
+    const formats = headers.map(header => {
+      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed at|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : 'mmm d, yyyy hh:mm' };
+      if (/revenue|spending|spent|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) return { type: "CURRENCY", pattern: '"$"#,##0.00' };
+      if (/rate/i.test(header)) return { type: "NUMBER", pattern: '0.0"%"' };
+      return null;
+    });
     sheet.eachRow({ includeEmpty: true }, row => {
-      values.push(Array.from({ length: columns }, (_, index) => cellValue(row.getCell(index + 1))));
+      values.push(Array.from({ length: columns }, (_, index) => {
+        const value = cellValue(row.getCell(index + 1));
+        if (row.number > 1 && formats[index]?.type.startsWith("DATE") && typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+          const timestamp = Date.parse(value);
+          if (Number.isFinite(timestamp)) return timestamp / 86_400_000 + 25569;
+        }
+        return value;
+      }));
     });
     if (!values.length) values.push([""]);
-    return { title: sheet.name, values, rows: values.length, columns };
+    return { title: sheet.name, values, rows: values.length, columns, hidden: sheet.state !== "visible", widths: headers.map((_, index) => Math.min(360, Math.max(120, (sheet.getColumn(index + 1).width ?? 20) * 7))), moneyRows: ["Overview", "Financial Metrics"].includes(sheet.name) ? values.flatMap((row, index) => index > 0 && typeof row[1] === "number" && /revenue|MRR/i.test(String(row[0])) && !/Revenue-generating gyms/.test(String(row[0])) ? [index] : []) : [], hiddenColumns: headers.flatMap((_, index) => sheet.getColumn(index + 1).hidden ? [index] : []), formats };
   });
 }
 
-type SpreadsheetMetadata = { sheets?: { properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } } }[] };
+type SpreadsheetMetadata = { sheets?: { properties?: { sheetId?: number; title?: string; gridProperties?: { rowCount?: number; columnCount?: number } }; bandedRanges?: { bandedRangeId: number }[] }[] };
 
 function valueChunks(sheet: SheetValues) {
   const chunks: { range: string; majorDimension: "ROWS"; values: SheetValues["values"] }[] = [];
@@ -104,24 +125,48 @@ export async function syncAdminMetricsToGoogleSheets() {
   const [token, workbook] = await Promise.all([accessToken(clientEmail, privateKey), buildAdminMetricsWorkbook()]);
   const sheets = worksheetValues(workbook);
   const baseUrl = `${GOOGLE_SHEETS_API}/${encodeURIComponent(spreadsheetId)}`;
-  let metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets.properties`, token);
+  let metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId)`, token);
+  const renames = (metadata.sheets ?? []).flatMap(sheet => {
+    const title = sheet.properties?.title;
+    const target = title ? renamedTabs[title] : undefined;
+    return target && !(metadata.sheets ?? []).some(item => item.properties?.title === target)
+      ? [{ updateSheetProperties: { properties: { sheetId: sheet.properties!.sheetId, title: target }, fields: "title" } }] : [];
+  });
+  if (renames.length) {
+    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: renames }) });
+    metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId)`, token);
+  }
   const existingTitles = new Set((metadata.sheets ?? []).map(sheet => sheet.properties?.title).filter(Boolean));
   const missing = sheets.filter(sheet => !existingTitles.has(sheet.title));
   if (missing.length) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows), columnCount: Math.max(26, sheet.columns) } } } })) }) });
-    metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets.properties`, token);
+    metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId)`, token);
   }
 
   const propertiesByTitle = new Map((metadata.sheets ?? []).flatMap(sheet => sheet.properties?.title && sheet.properties.sheetId !== undefined ? [[sheet.properties.title, sheet.properties] as const] : []));
-  const formatRequests = sheets.flatMap(sheet => {
+  const formatRequests = sheets.flatMap((sheet, index) => {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows, 1_000);
     const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, 26);
+    const sheetId = properties.sheetId;
+    const range = { sheetId, startRowIndex: 0, endRowIndex: Math.max(2, sheet.rows), startColumnIndex: 0, endColumnIndex: sheet.columns };
     return [
-      { updateSheetProperties: { properties: { sheetId: properties.sheetId, gridProperties: { rowCount, columnCount, frozenRowCount: 1 } }, fields: "gridProperties(rowCount,columnCount,frozenRowCount)" } },
-      { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: sheet.columns }, cell: { userEnteredFormat: { backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat)" } },
-      { setBasicFilter: { filter: { range: { sheetId: properties.sheetId, startRowIndex: 0, endRowIndex: sheet.rows, startColumnIndex: 0, endColumnIndex: sheet.columns } } } },
+      { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
+      { repeatCell: { range, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { fontFamily: "Arial", fontSize: 10 }, verticalAlignment: "MIDDLE", wrapStrategy: "CLIP", numberFormat: { type: "NUMBER", pattern: "0.##" } } }, fields: "userEnteredFormat" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 }, properties: { pixelSize: 60 }, fields: "pixelSize" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: columnCount }, properties: { hiddenByUser: false }, fields: "hiddenByUser" } },
+      ...sheet.widths.map((pixelSize, column) => ({ updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: column, endIndex: column + 1 }, properties: { pixelSize, hiddenByUser: sheet.hiddenColumns.includes(column) }, fields: "pixelSize,hiddenByUser" } })),
+      ...sheet.formats.flatMap((numberFormat, column) => numberFormat ? [{ repeatCell: { range: { ...range, startRowIndex: 1, startColumnIndex: column, endColumnIndex: column + 1 }, cell: { userEnteredFormat: { numberFormat } }, fields: "userEnteredFormat.numberFormat" } }] : []),
+      ...sheet.moneyRows.map(row => ({ repeatCell: { range: { sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 1, endColumnIndex: 2 }, cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '"$"#,##0.00' } } }, fields: "userEnteredFormat.numberFormat" } })),
+      ...(sheet.title === "Start here" ? [
+        { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 }, properties: { pixelSize: 720 }, fields: "pixelSize" } },
+        { repeatCell: { range: { ...range, startRowIndex: 1 }, cell: { userEnteredFormat: { wrapStrategy: "WRAP" } }, fields: "userEnteredFormat.wrapStrategy" } },
+      ] : []),
+      ...(metadata.sheets?.find(item => item.properties?.sheetId === sheetId)?.bandedRanges ?? []).map(band => ({ deleteBanding: { bandedRangeId: band.bandedRangeId } })),
+      { addBanding: { bandedRange: { range, rowProperties: { headerColor: { red: 0.133, green: 0.773, blue: 0.369 }, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: { red: 0.94, green: 0.99, blue: 0.96 } } } } },
+      { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: sheet.columns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
+      { setBasicFilter: { filter: { range } } },
     ];
   });
 
