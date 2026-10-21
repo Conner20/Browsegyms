@@ -90,3 +90,16 @@ request tests (no database or Google access required). To apply changes to the
 live Sheet, deploy the updated sync code and run the existing authenticated
 `/api/cron/google-sheets` route, or wait for its scheduled run. Google service
 account configuration is required in that environment.
+
+The Google Sheets growth tabs include native line charts. Financial growth has a
+**Choose gym** dropdown at B1, initially **All gyms**; its chart
+updates immediately via a formula using the selected gym ID. The sync preserves
+valid selections and falls back to All gyms when a gym is removed. Revenue and
+MRR use the dollar axis; customers use a separate count axis. User and demand
+growth charts all seven cumulative series. Chart IDs are reused on refresh, and
+unrelated user-created charts remain unchanged. Dropdown interaction requires
+edit access to the sheet. Charts are added by the Google sync, not the XLSX export.
+The retired **Fitting In Metrics** master tab is deleted only after the replacement
+reports and charts are successfully written; no other custom tabs are removed.
+
+Growth charts appear above their sortable data tables (headers on row 28).
