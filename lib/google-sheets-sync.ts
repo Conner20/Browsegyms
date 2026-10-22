@@ -110,7 +110,7 @@ function valueChunks(sheet: SheetValues) {
       bytes += rowBytes;
       end += 1;
     }
-    chunks.push({ range: `${quoteSheet(sheet.title)}!A${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
+    chunks.push({ range: `${quoteSheet(sheet.title)}!${sheet.title === "Financial growth" ? "AD" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
     start = end;
   }
   return chunks;
@@ -150,7 +150,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   const existingTitles = new Set((metadata.sheets ?? []).map(sheet => sheet.properties?.title).filter(Boolean));
   const missing = sheets.filter(sheet => !existingTitles.has(sheet.title));
   if (missing.length) {
-    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
+    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
     metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId,charts(chartId,spec.altText))`, token);
   }
 
@@ -159,9 +159,11 @@ export async function syncAdminMetricsToGoogleSheets() {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, 1_000);
-    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.startRow ? 28 : 26);
+    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
-    const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, sheet.rows), startColumnIndex: 0, endColumnIndex: sheet.columns };
+    const tableRows = sheet.title === "Financial growth" ? new Set(sheet.values.slice(1).map(row => row[1])).size + 1 : sheet.rows;
+    const tableColumns = sheet.title === "Financial growth" ? 6 : sheet.columns;
+    const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, tableRows), startColumnIndex: 0, endColumnIndex: tableColumns };
     return [
       { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
       { repeatCell: { range, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { fontFamily: "Arial", fontSize: 10 }, verticalAlignment: "MIDDLE", wrapStrategy: "CLIP", numberFormat: { type: "NUMBER", pattern: "0.##" } } }, fields: "userEnteredFormat" } },
@@ -170,14 +172,10 @@ export async function syncAdminMetricsToGoogleSheets() {
       ...sheet.widths.map((pixelSize, column) => ({ updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: column, endIndex: column + 1 }, properties: { pixelSize, hiddenByUser: sheet.hiddenColumns.includes(column) }, fields: "pixelSize,hiddenByUser" } })),
       ...sheet.formats.flatMap((numberFormat, column) => numberFormat ? [{ repeatCell: { range: { ...range, startRowIndex: sheet.startRow + 1, startColumnIndex: column, endColumnIndex: column + 1 }, cell: { userEnteredFormat: { numberFormat } }, fields: "userEnteredFormat.numberFormat" } }] : []),
       ...sheet.moneyRows.map(row => ({ repeatCell: { range: { sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 1, endColumnIndex: 2 }, cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '"$"#,##0.00' } } }, fields: "userEnteredFormat.numberFormat" } })),
-      ...(sheet.title === "Start here" ? [
-        { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 }, properties: { pixelSize: 720 }, fields: "pixelSize" } },
-        { repeatCell: { range: { ...range, startRowIndex: 1 }, cell: { userEnteredFormat: { wrapStrategy: "WRAP" } }, fields: "userEnteredFormat.wrapStrategy" } },
-      ] : []),
       ...(metadata.sheets?.find(item => item.properties?.sheetId === sheetId)?.bandedRanges ?? []).map(band => ({ deleteBanding: { bandedRangeId: band.bandedRangeId } })),
       { addBanding: { bandedRange: { range, rowProperties: { headerColor: { red: 0.133, green: 0.773, blue: 0.369 }, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: { red: 0.94, green: 0.99, blue: 0.96 } } } } },
-      { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + 1, startColumnIndex: 0, endColumnIndex: sheet.columns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
-      { setBasicFilter: { filter: { range } } },
+      { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + 1, startColumnIndex: 0, endColumnIndex: tableColumns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
+      sheet.title === "Financial growth" ? { clearBasicFilter: { sheetId } } : { setBasicFilter: { filter: { range } } },
     ];
   });
 
@@ -193,10 +191,10 @@ export async function syncAdminMetricsToGoogleSheets() {
   for (let index = 0; index < chartRequests.length; index += 100) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: chartRequests.slice(index, index + 100) }) });
   }
-  // Remove only the explicitly retired master tab, after replacement reports succeed.
-  const legacy = metadata.sheets?.find(sheet => sheet.properties?.title === "Fitting In Metrics");
-  if (legacy?.properties?.sheetId !== undefined) {
-    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: [{ deleteSheet: { sheetId: legacy.properties.sheetId } }] }) });
+  // Retire only the two explicitly removed tabs, after replacement reports succeed.
+  const retired = (metadata.sheets ?? []).filter(sheet => ["Fitting In Metrics", "Start here"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
+  if (retired.length) {
+    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: retired.map(sheet => ({ deleteSheet: { sheetId: sheet.properties!.sheetId } })) }) });
   }
   return { spreadsheetId, tabs: sheets.length, rows: sheets.reduce((sum, sheet) => sum + sheet.rows, 0), syncedAt: new Date().toISOString() };
 }

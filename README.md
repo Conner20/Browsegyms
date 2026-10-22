@@ -71,8 +71,7 @@ by Git and must be stored securely with the database backup until the rollback w
 
 The Google Sheet and Excel export use the same section-based layout: Overview,
 Users, Gym claim log, Landing-page demand, Financial Metrics, and separate tabs
-for the tables and growth series within those sections. Start here explains gym
-search, whole-table sorting, filter views, reporting periods, and refresh behavior.
+for the tables and growth series within those sections. Overview is the first tab.
 Gym fields lead the relevant detail tables; User gym access has one row per
 assignment so multi-gym accounts can be filtered by an exact gym name. Daily
 supporting reports, raw events, and audit notes are retained in hidden tabs.
@@ -99,15 +98,22 @@ MRR use the dollar axis; customers use a separate count axis. User and demand
 growth charts all seven cumulative series. Chart IDs are reused on refresh, and
 unrelated user-created charts remain unchanged. Dropdown interaction requires
 edit access to the sheet. Charts are added by the Google sync, not the XLSX export.
-The retired **Fitting In Metrics** master tab is deleted only after the replacement
-reports and charts are successfully written; no other custom tabs are removed.
+The retired **Fitting In Metrics** and **Start here** tabs are deleted only after
+the replacement reports and charts are successfully written; no other custom
+tabs are removed.
 
-Growth charts appear above their sortable data tables (headers on row 28).
+Growth charts appear above their data tables (headers on row 28). Financial
+growth shows only the selected gym (or the combined All gyms totals), in date
+order. Selecting one metric narrows that table to Date and that metric. The full
+financial source remains in hidden columns AD:AK. The selected table is a live
+formula result, so use the dropdowns rather than manually sorting its cells.
 
 Both growth charts have a **Choose metric** dropdown at E1, defaulting to
 **All metrics**. Pick one metric to isolate its line; choose All metrics to restore
 all lines. On Financial growth this works together with the gym selection at B1.
 Valid gym and metric choices survive scheduled refreshes. Metrics are masked in
-hidden chart-only ranges, preserving the complete sortable data tables and the
-separate dollar/customer axes. Blank dates and inactive series are not plotted as
+hidden chart-only ranges, preserving the complete source data and the separate
+dollar/customer axes. Suppressed series use blank values instead of #N/A; chart
+data labels are disabled. The selected financial table uses neutral numeric
+formatting with a USD note, so a customer count is never formatted as dollars. Blank dates and inactive series are not plotted as
 zero. Chart controls require Google Sheets edit access.

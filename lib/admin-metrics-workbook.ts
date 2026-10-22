@@ -352,22 +352,7 @@ export async function buildAdminMetricsWorkbook() {
       sheet.spliceColumns(gymColumn, 1); sheet.spliceColumns(1, 0, values);
     }
   }
-  const guide = addTable("Start here", ["Topic or tab", "How to use it"]);
-  guide.addRows([
-    ["Last refreshed (UTC)", new Date().toISOString()],
-    ["Reporting period", "All retained history. Summary tabs match All time; use dates in activity and growth tabs for history."],
-    ["Find a gym", "Open Gym demand funnel, Revenue by gym, Gym claim log, or Claim activity log. Click the filter arrow on Gym, search its name, and select it."],
-    ["Sort data", "Use the header filter arrow to sort A–Z or largest–smallest. Always sort the whole table so rows stay together."],
-    ["Personal filters", "In Google Sheets, use Data > Filter views to save your own view without changing someone else's view."],
-    ["Find text", "Use Ctrl+F (Windows) or Command+F (Mac) to find a gym, email, city, or offer in a tab."],
-    ["Automatic refresh", "This is a reporting copy. Values and standard layout are replaced by the app sync; keep personal notes in a separate tab."],
-    ["Money", "Amounts are USD. Estimated revenue is user-reported and is separate from gym-confirmed revenue. MRR means monthly recurring revenue."],
-    ["Growth tabs", "Cumulative totals at the end of each UTC date. Do not sum cumulative rows. In Google Sheets, Financial growth has a Choose gym dropdown beside the interactive chart. It starts at All gyms and keeps your choice on refresh. Both growth charts have a Choose metric dropdown: All metrics or one metric at a time. Valid selections are kept on refresh."],
-    ["User gym access", "One row per gym and user, for exact gym filtering. Users contains one row per account."],
-    ["Supporting history", "Daily metrics, Daily gym demand, Daily filter usage, Daily city activity, Raw events, and Audit notes are hidden. Unhide them for detailed analysis."],
-    ["History limits", "Only retained database records are available. Metric resets remove earlier event history; account and ownership fields show current state."],
-  ]);
-  const tabOrder = ["Start here", "Overview", "Users", "User gym access", "Gym claim log", "Landing-page demand", "User and demand growth", "Gym demand funnel", "Claim activity log", "Signup activity", "Popular cities", "Filter usage", "Financial Metrics", "Financial growth", "Revenue by gym", "Unclaimed gym opportunity", "User spending", "Revenue by offer", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"];
+  const tabOrder = ["Overview", "Users", "User gym access", "Gym claim log", "Landing-page demand", "User and demand growth", "Gym demand funnel", "Claim activity log", "Signup activity", "Popular cities", "Filter usage", "Financial Metrics", "Financial growth", "Revenue by gym", "Unclaimed gym opportunity", "User spending", "Revenue by offer", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"];
   const hiddenTabs = new Set(["Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"]);
   const ordered = new ExcelJS.Workbook();
   ordered.creator = workbook.creator; ordered.created = workbook.created; ordered.modified = workbook.modified;
@@ -375,7 +360,6 @@ export async function buildAdminMetricsWorkbook() {
     const source = workbook.getWorksheet(name)!;
     formatSheet(source);
     source.state = hiddenTabs.has(name) ? "hidden" : "visible";
-    if (name === "Start here") { source.getColumn(2).width = 100; source.getColumn(2).alignment = { wrapText: true, vertical: "middle" }; }
     if (["Overview", "Financial Metrics"].includes(name)) source.eachRow((row, index) => {
       if (index > 1 && typeof row.getCell(2).value === "number" && /revenue|MRR/i.test(row.getCell(1).text) && !/Revenue-generating gyms/.test(row.getCell(1).text)) row.getCell(2).numFmt = '"$"#,##0.00';
     });
@@ -394,12 +378,7 @@ export async function buildAdminMetricsWorkbook() {
     const target = ordered.addWorksheet(name);
     target.model = { ...source.model, id: target.id };
     target.state = source.state;
-    if (!hiddenTabs.has(name) && name !== "Start here") guide.addRow([name, `Matches the ${name} section or its supporting detail on the admin overview.`]);
   }
-  // The guide was extended while copying; copy it again to include the tab directory.
-  formatSheet(guide);
-  guide.getColumn(2).width = 100;
-  ordered.getWorksheet("Start here")!.model = { ...guide.model, id: ordered.getWorksheet("Start here")!.id };
   return ordered;
 
 }

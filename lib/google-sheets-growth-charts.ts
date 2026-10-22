@@ -35,7 +35,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       const selected = options.some(([label]) => label === previousSelection) ? previousSelection! : "All gyms";
       const lastOptionRow = options.length + 1;
       const sourceEnd = 27 + Math.max(2, data.rows);
-      const formula = `=IFERROR(SORT(FILTER($B$29:$G$${sourceEnd},$H$29:$H$${sourceEnd}=IFERROR(VLOOKUP($B$1,$R$2:$S$${lastOptionRow},2,FALSE),"all")),1,TRUE),"")`;
+      const formula = `=IFERROR(SORT(FILTER($AE$29:$AJ$${sourceEnd},$AK$29:$AK$${sourceEnd}=IFERROR(VLOOKUP($B$1,$R$2:$S$${lastOptionRow},2,FALSE),"all")),1,TRUE),"")`;
       chartStart = 27; firstColumn = 9;
       chartEnd = chartStart + Math.max(2, new Set(data.values.slice(1).map(row => row[1])).size + 1);
       requests.push(
@@ -58,8 +58,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       { setDataValidation: { range: range(0, 1, 4, 5), rule: { condition: { type: "ONE_OF_LIST", values: ["All metrics", ...metricNames].map(userEnteredValue => ({ userEnteredValue })) }, strict: true, showCustomUi: true, inputMessage: "Show all metrics together or one metric at a time." } } },
       { repeatCell: { range: range(0, 1, 4, 5), cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.98, blue: 0.9 }, textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
     );
-    // Keep the source tables intact. Unselected series emit #N/A rather than zero,
-    // so Sheets draws only the selected lines and never invents zero-value trends.
+    // Empty strings suppress unselected series without exposing error labels in charts.
     const columnLetter = (index: number) => String.fromCharCode(65 + index);
     const rawDate = columnLetter(firstColumn);
     const headerRow = chartStart + 1, firstDataRow = headerRow + 1;
@@ -70,7 +69,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
     })];
     const dataCells = [formulaCell(`=ARRAYFORMULA(IF($${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}="","",$${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}))`), ...metricNames.map((_, index) => {
       const column = columnLetter(firstColumn + index + 1);
-      return formulaCell(`=ARRAYFORMULA(IF($${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}="","",IF(OR($E$1="All metrics",$E$1=$${column}$${headerRow}),$${column}$${firstDataRow}:$${column}$${chartEnd},NA())))`);
+      return formulaCell(`=ARRAYFORMULA(IF($${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}="","",IF(OR($E$1="All metrics",$E$1=$${column}$${headerRow}),$${column}$${firstDataRow}:$${column}$${chartEnd},"")))`);
     })];
     firstColumn = 20;
     requests.push(
@@ -79,6 +78,22 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       { repeatCell: { range: range(chartStart + 1, chartEnd, 20, 21), cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "mmm d, yyyy" } } }, fields: "userEnteredFormat.numberFormat" } },
       { repeatCell: { range: range(chartStart + 1, chartEnd, 21, financial ? 25 : 28), cell: { userEnteredFormat: { numberFormat: financial ? { type: "CURRENCY", pattern: '"$"#,##0.00' } : { type: "NUMBER", pattern: "0" } } }, fields: "userEnteredFormat.numberFormat" } },
     );
+    if (financial) {
+      // The visible table and chart share the same gym-filtered data. Compact the
+      // table to Date + the selected metric, or show all metrics for that gym.
+      const selectedRows = `FILTER($J$28:$O$${chartEnd},$J$28:$J$${chartEnd}<>"")`;
+      const tableFormula = `=IFERROR(IF($E$1="All metrics",${selectedRows},CHOOSECOLS(${selectedRows},1,MATCH($E$1,$J$28:$O$28,0))),"")`;
+      requests.push(
+        { updateCells: { range: range(27, 28, 0, 1), rows: [{ values: [formulaCell(tableFormula)] }], fields: "userEnteredValue" } },
+        { clearBasicFilter: { sheetId } },
+        { updateCells: { range: range(1, 2, 3, 6), rows: [{ values: [textCell("Revenue / MRR in USD; customers are counts.")] }], fields: "userEnteredValue" } },
+        { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 29, endIndex: 37 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
+        { repeatCell: { range: range(28, chartEnd, 0, 1), cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "mmm d, yyyy" } } }, fields: "userEnteredFormat.numberFormat" } },
+        // A metric can move to column B when selected. Neutral numeric formatting
+        // avoids formatting customer counts as dollars or revenue as dates.
+        { repeatCell: { range: range(28, chartEnd, 1, 6), cell: { userEnteredFormat: { numberFormat: { type: "NUMBER", pattern: "#,##0.##" } } }, fields: "userEnteredFormat.numberFormat" } },
+      );
+    }
     const marker = `fitting-in:${financial ? "financial" : "demand"}-growth`;
     const source = (column: number) => ({ sourceRange: { sources: [range(chartStart, chartEnd, column, column + 1)] } });
     const spec = {
@@ -94,7 +109,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
           ...(financial ? [{ position: "RIGHT_AXIS", title: "Customers supplied" }] : []),
         ],
         domains: [{ domain: source(firstColumn) }],
-        series: Array.from({ length: financial ? 5 : 7 }, (_, index) => ({ series: source(firstColumn + index + 1), targetAxis: financial && index === 4 ? "RIGHT_AXIS" : "LEFT_AXIS", pointStyle: { size: 3 } })),
+        series: Array.from({ length: financial ? 5 : 7 }, (_, index) => ({ series: source(firstColumn + index + 1), targetAxis: financial && index === 4 ? "RIGHT_AXIS" : "LEFT_AXIS", pointStyle: { size: 3 }, dataLabel: { type: "NONE" } })),
       },
     };
     const chart = existing?.charts?.find(chart => chart.spec?.altText === marker);
