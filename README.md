@@ -116,4 +116,4 @@ chart preservation, and safe retirement of old tabs. No external services are
 used by these tests. To apply changes, deploy the sync code and run the existing
 authenticated `/api/cron/google-sheets` route or wait for its scheduled run.
 
-The Overview and Landing-page demand tabs contain only the dashboard metrics, and Gym demand funnel uses the dashboard column order. Gym claim clicks provides a gym dropdown and the six claim-click detail fields; the selected gym persists across refreshes.
+The Overview and Landing-page demand tabs contain only the dashboard metrics, and Gym demand funnel uses the dashboard column order. Gym claim clicks shows all claim clicks, newest first, when the dropdown is “Select a gym”; choosing a gym filters the six claim-click detail fields to that gym; the selected gym persists across refreshes.
