@@ -61,7 +61,6 @@ type SheetValues = { startRow: number; title: string; values: (string | number |
 // Reuse existing tab IDs so bookmarks and saved filter views survive the migration.
 const renamedTabs: Record<string, string> = {
   "Gym demand": "Gym demand funnel",
-  "Claim activity": "Claim activity log",
   "Gym claims": "Gym claim log",
 };
 
@@ -113,7 +112,7 @@ function valueChunks(sheet: SheetValues) {
       bytes += rowBytes;
       end += 1;
     }
-    chunks.push({ range: `${quoteSheet(sheet.title)}!${sheet.title === "Financial growth" ? "AD" : [CLAIM_CLICKS_TITLE, "Overview"].includes(sheet.title) ? "J" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
+    chunks.push({ range: `${quoteSheet(sheet.title)}!${sheet.title === "Financial growth" ? "AD" : sheet.title === CLAIM_CLICKS_TITLE ? "U" : sheet.title === "Overview" ? "J" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
     start = end;
   }
   return chunks;
@@ -155,7 +154,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   const existingTitles = new Set((metadata.sheets ?? []).map(sheet => sheet.properties?.title).filter(Boolean));
   const missing = sheets.filter(sheet => !existingTitles.has(sheet.title));
   if (missing.length) {
-    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
+    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.title === CLAIM_CLICKS_TITLE ? 38 : sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
     metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId,charts(chartId,spec.altText))`, token);
   }
 
@@ -164,10 +163,10 @@ export async function syncAdminMetricsToGoogleSheets() {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, sheet.title === CLAIM_CLICKS_TITLE ? (sheets.find(item => item.title === "Revenue by gym")?.rows ?? 0) + 1 : 0, 1_000);
-    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
+    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === CLAIM_CLICKS_TITLE ? 38 : sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
     const tableRows = sheet.title === "Financial growth" ? new Set(sheet.values.slice(1).map(row => row[1])).size + 1 : sheet.rows;
-    const tableColumns = ["Financial growth", CLAIM_CLICKS_TITLE].includes(sheet.title) ? 6 : sheet.title === "Overview" ? 2 : sheet.columns;
+    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 13 : sheet.title === "Financial growth" ? 6 : sheet.title === "Overview" ? 2 : sheet.columns;
     const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, tableRows), startColumnIndex: 0, endColumnIndex: tableColumns };
     return [
       { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.title === CLAIM_CLICKS_TITLE ? 5 : sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
@@ -197,7 +196,7 @@ export async function syncAdminMetricsToGoogleSheets() {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: chartRequests.slice(index, index + 100) }) });
   }
   // Retire only the obsolete managed tabs, after replacement reports succeed.
-  const retired = (metadata.sheets ?? []).filter(sheet => ["Fitting In Metrics", "Start here", "User gym access", "Signup activity", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
+  const retired = (metadata.sheets ?? []).filter(sheet => ["Claim activity log", "Claim activity", "Fitting In Metrics", "Start here", "User gym access", "Signup activity", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
   if (retired.length) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: retired.map(sheet => ({ deleteSheet: { sheetId: sheet.properties!.sheetId } })) }) });
   }

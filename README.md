@@ -69,9 +69,9 @@ by Git and must be stored securely with the database backup until the rollback w
 
 ### Metrics workbook layout
 
-The workbook mirrors the admin overview with these 16 tabs, in page order:
+The workbook mirrors the admin overview with these 15 tabs, in page order:
 Overview, Users, Gym claim log, Landing-page demand, User and demand growth,
-Gym demand funnel, Gym claim clicks, Claim activity log, Popular cities, Filter usage,
+Gym demand funnel, Gym claim clicks, Popular cities, Filter usage,
 Financial Metrics, Financial growth, Revenue by gym, Unclaimed gym opportunity,
 User spending, and Revenue by offer. Users retains gym permissions; the funnel
 includes the overview's day-pass and membership click rates.
@@ -79,7 +79,7 @@ includes the overview's day-pass and membership click rates.
 The sync removes only these retired managed tabs, after replacement reports and
 charts succeed: User gym access, Signup activity, Financial ledger, Daily metrics,
 Daily gym demand, Daily filter usage, Daily city activity, Raw events, Audit notes,
-Start here, and the old Fitting In Metrics combined tab. Custom tabs are preserved.
+Claim activity log, Claim activity, Start here, and the old Fitting In Metrics combined tab. Custom tabs are preserved.
 Removed tabs are no longer generated in the Excel export or Google Sheet. Source
 records remain in PostgreSQL; clearing metrics in the app still removes event
 history and is reflected in the next successful sheet sync.
@@ -116,6 +116,6 @@ chart preservation, and safe retirement of old tabs. No external services are
 used by these tests. To apply changes, deploy the sync code and run the existing
 authenticated `/api/cron/google-sheets` route or wait for its scheduled run.
 
-The Overview and Landing-page demand tabs contain only the dashboard metrics, and Gym demand funnel uses the dashboard column order. Gym claim clicks shows all claim clicks, newest first, when the dropdown is “Select a gym”; choosing a gym filters the six claim-click detail fields to that gym; the selected gym persists across refreshes.
+The Overview and Landing-page demand tabs contain only the dashboard metrics, and Gym demand funnel uses the dashboard column order. Gym claim clicks shows all claim clicks, newest first, when the dropdown is “Select a gym”; choosing a gym filters all claim-click and confirmation detail fields to that gym; the selected gym persists across refreshes.
 
 Overview has an All time (default), Past week, Past month, or Past year dropdown. Periods match the admin overview’s rolling 7/30/365-day windows at sync time, and selections persist across refreshes.
