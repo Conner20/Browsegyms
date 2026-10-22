@@ -362,7 +362,7 @@ export async function buildAdminMetricsWorkbook() {
     ["Find text", "Use Ctrl+F (Windows) or Command+F (Mac) to find a gym, email, city, or offer in a tab."],
     ["Automatic refresh", "This is a reporting copy. Values and standard layout are replaced by the app sync; keep personal notes in a separate tab."],
     ["Money", "Amounts are USD. Estimated revenue is user-reported and is separate from gym-confirmed revenue. MRR means monthly recurring revenue."],
-    ["Growth tabs", "Cumulative totals at the end of each UTC date. Do not sum cumulative rows. In Google Sheets, Financial growth has a Choose gym dropdown beside the interactive chart. It starts at All gyms and keeps your choice on refresh. User and demand growth has its own chart."],
+    ["Growth tabs", "Cumulative totals at the end of each UTC date. Do not sum cumulative rows. In Google Sheets, Financial growth has a Choose gym dropdown beside the interactive chart. It starts at All gyms and keeps your choice on refresh. Both growth charts have a Choose metric dropdown: All metrics or one metric at a time. Valid selections are kept on refresh."],
     ["User gym access", "One row per gym and user, for exact gym filtering. Users contains one row per account."],
     ["Supporting history", "Daily metrics, Daily gym demand, Daily filter usage, Daily city activity, Raw events, and Audit notes are hidden. Unhide them for detailed analysis."],
     ["History limits", "Only retained database records are available. Metric resets remove earlier event history; account and ownership fields show current state."],

@@ -51,17 +51,25 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   let metadata = { sheets: [{ properties: { sheetId: 0, title: 'Gym demand', gridProperties: { rowCount: 1000, columnCount: 26 } } }, { properties: { sheetId: 99, title: 'Personal notes', gridProperties: { rowCount: 1000, columnCount: 26 } } }] };
   metadata.sheets.push({ properties: { sheetId: 98, title: 'Fitting In Metrics' } });
   const requests = []; const writes = [];
-  let selectedGym; let nextChartId = 10000; let failCharts = false;
+  let selectedGym; const selectedMetrics = {}; let nextChartId = 10000; let failCharts = false;
   global.fetch = async (url, init) => {
     if (url.includes('oauth2')) return Response.json({ access_token: 'fixture-token' });
     const body = init?.body ? JSON.parse(init.body) : {};
-    if (url.includes('/values/') && !init?.method) return Response.json({ values: selectedGym ? [[selectedGym]] : [] });
+    if (url.includes('/values/') && !init?.method) {
+      const cell = decodeURIComponent(url.split('/values/')[1]);
+      const value = cell.endsWith('!B1') ? selectedGym : selectedMetrics[cell.includes('Financial growth') ? 'Financial growth' : 'User and demand growth'];
+      return Response.json({ values: value ? [[value]] : [] });
+    }
     if (failCharts && body.requests?.some(request => request.updateChartSpec || request.addChart)) return new Response('Chart request failed', { status: 500 });
     if (url.includes('?fields=')) return Response.json(metadata);
     if (url.endsWith('/values:batchUpdate')) writes.push(...body.data);
     if (url.endsWith(':batchUpdate') && body.requests) for (const request of body.requests) {
       requests.push(request);
       if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.endColumnIndex === 2) selectedGym = request.updateCells.rows[0].values[1].userEnteredValue.stringValue;
+      if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.startColumnIndex === 3) {
+        const title = metadata.sheets.find(sheet => sheet.properties.sheetId === request.updateCells.range.sheetId).properties.title;
+        selectedMetrics[title] = request.updateCells.rows[0].values[1].userEnteredValue.stringValue;
+      }
       if (request.addChart) { const chart = request.addChart.chart; metadata.sheets.find(sheet => sheet.properties.sheetId === chart.position.overlayPosition.anchorCell.sheetId).charts = [{ ...chart, chartId: nextChartId++ }]; }
       if (request.updateChartSpec) assert(metadata.sheets.some(sheet => sheet.charts?.some(chart => chart.chartId === request.updateChartSpec.chartId)));
       if (request.deleteSheet) metadata.sheets = metadata.sheets.filter(sheet => sheet.properties.sheetId !== request.deleteSheet.sheetId);
@@ -87,8 +95,19 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   const formula = requests.flatMap(request => request.updateCells?.rows ?? []).flatMap(row => row.values ?? []).find(cell => cell.userEnteredValue?.formulaValue)?.userEnteredValue.formulaValue;
   assert(formula.includes('FILTER($B$29:$G$') && formula.includes('$H$29:$H$') && formula.includes('VLOOKUP($B$1,'), 'chart filters by stable gym ID, never sums all-gym and individual rows');
   assert(requests.some(request => request.setDataValidation?.rule.condition.type === 'ONE_OF_RANGE'));
+  assert.deepEqual(selectedMetrics, { 'Financial growth': 'All metrics', 'User and demand growth': 'All metrics' });
+  const metricDropdowns = requests.filter(request => request.setDataValidation?.rule.condition.type === 'ONE_OF_LIST');
+  assert.deepEqual(metricDropdowns.map(request => request.setDataValidation.rule.condition.values.length), [6, 8], 'every financial and demand metric is selectable');
+  const chartFormulas = requests.flatMap(request => request.updateCells?.rows ?? []).flatMap(row => row.values ?? []).map(cell => cell.userEnteredValue?.formulaValue).filter(Boolean);
+  assert.equal(chartFormulas.filter(formula => formula.includes('NA()')).length, 12, 'each series hides rather than plots zeros when not selected');
+  assert(chartFormulas.filter(formula => formula.includes('NA()')).every(formula => formula.includes('$E$1="All metrics"') && formula.includes('$E$1=$')));
+  assert(requests.filter(request => request.addChart).every(request => request.addChart.chart.spec.basicChart.domains[0].domain.sourceRange.sources[0].startColumnIndex === 20), 'both charts use selector-controlled data');
+  selectedMetrics['Financial growth'] = 'Customers supplied';
+  selectedMetrics['User and demand growth'] = 'Users';
   selectedGym = 'Beta Gym';
   await syncAdminMetricsToGoogleSheets();
+  assert.equal(selectedMetrics['Financial growth'], 'Customers supplied');
+  assert.equal(selectedMetrics['User and demand growth'], 'Users');
   assert.equal(selectedGym, 'Beta Gym', 'scheduled refresh preserves a valid gym selection');
   assert.equal(requests.filter(request => request.addChart).length, 2, 'repeat sync updates charts without duplicates');
   assert.equal(requests.filter(request => request.updateChartSpec).length, 2);
@@ -103,8 +122,11 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   const empty = await buildAdminMetricsWorkbook();
   assert.equal(empty.getWorksheet('Revenue by gym').rowCount, 1);
   selectedGym = 'Removed gym';
+  selectedMetrics['Financial growth'] = 'Removed metric';
+  selectedMetrics['User and demand growth'] = 'Removed metric';
   await syncAdminMetricsToGoogleSheets();
   assert.equal(selectedGym, 'All gyms', 'missing gym falls back to All gyms');
+  assert.deepEqual(selectedMetrics, { 'Financial growth': 'All metrics', 'User and demand growth': 'All metrics' }, 'invalid metric selections reset safely');
   const duplicateGyms = { title: 'Financial growth', rows: 4, values: [['Gym', 'Date', 'Total', 'Day', 'Membership', 'MRR', 'Customers', 'ID'], ['All gyms (combined)', 46000, 30, 30, 0, 0, 2, 'all'], ['Twin Gym', 46000, 10, 10, 0, 0, 1, 'a'], ['Twin Gym', 46000, 20, 20, 0, 0, 1, 'b']] };
   const duplicateRequests = growthChartRequests([duplicateGyms], [{ properties: { sheetId: 1, title: duplicateGyms.title } }]);
   const options = duplicateRequests.find(request => request.updateCells?.range.startColumnIndex === 17).updateCells.rows;

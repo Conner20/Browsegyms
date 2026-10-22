@@ -1,4 +1,4 @@
-import { growthChartRequests, FINANCIAL_SELECTION_RANGE } from "@/lib/google-sheets-growth-charts";
+import { growthChartRequests, FINANCIAL_SELECTION_RANGE, GROWTH_METRIC_SELECTION_RANGES } from "@/lib/google-sheets-growth-charts";
 import { createSign } from "node:crypto";
 import type ExcelJS from "exceljs";
 import { buildAdminMetricsWorkbook } from "@/lib/admin-metrics-workbook";
@@ -127,12 +127,16 @@ export async function syncAdminMetricsToGoogleSheets() {
   const sheets = worksheetValues(workbook);
   const baseUrl = `${GOOGLE_SHEETS_API}/${encodeURIComponent(spreadsheetId)}`;
   let metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId,charts(chartId,spec.altText))`, token);
-  // Read the user's choice before the managed data refresh clears cells.
-  let previousSelection: string | undefined;
-  if (metadata.sheets?.some(sheet => sheet.properties?.title === "Financial growth")) {
-    const selection = await googleRequest<{ values?: unknown[][] }>(`${baseUrl}/values/${encodeURIComponent(FINANCIAL_SELECTION_RANGE)}`, token);
-    if (typeof selection.values?.[0]?.[0] === "string") previousSelection = selection.values[0][0];
-  }
+  // Read all controls before the managed refresh clears their cells.
+  const controls = [
+    { key: "gym", title: "Financial growth", range: FINANCIAL_SELECTION_RANGE },
+    ...Object.entries(GROWTH_METRIC_SELECTION_RANGES).map(([title, range]) => ({ key: title, title, range })),
+  ].filter(control => metadata.sheets?.some(sheet => sheet.properties?.title === control.title));
+  const selections = await Promise.all(controls.map(async control => {
+    const response = await googleRequest<{ values?: unknown[][] }>(`${baseUrl}/values/${encodeURIComponent(control.range)}`, token);
+    return [control.key, typeof response.values?.[0]?.[0] === "string" ? response.values[0][0] : ""] as const;
+  }));
+  const previousSelections = Object.fromEntries(selections);
   const renames = (metadata.sheets ?? []).flatMap(sheet => {
     const title = sheet.properties?.title;
     const target = title ? renamedTabs[title] : undefined;
@@ -146,7 +150,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   const existingTitles = new Set((metadata.sheets ?? []).map(sheet => sheet.properties?.title).filter(Boolean));
   const missing = sheets.filter(sheet => !existingTitles.has(sheet.title));
   if (missing.length) {
-    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(26, sheet.columns) } } } })) }) });
+    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
     metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId,charts(chartId,spec.altText))`, token);
   }
 
@@ -155,7 +159,7 @@ export async function syncAdminMetricsToGoogleSheets() {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, 1_000);
-    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, 26);
+    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
     const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, sheet.rows), startColumnIndex: 0, endColumnIndex: sheet.columns };
     return [
@@ -185,7 +189,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   for (let index = 0; index < chunks.length; index += 10) {
     await googleRequest(`${baseUrl}/values:batchUpdate`, token, { method: "POST", body: JSON.stringify({ valueInputOption: "RAW", data: chunks.slice(index, index + 10) }) });
   }
-  const chartRequests = growthChartRequests(sheets, metadata.sheets ?? [], previousSelection);
+  const chartRequests = growthChartRequests(sheets, metadata.sheets ?? [], previousSelections.gym, previousSelections);
   for (let index = 0; index < chartRequests.length; index += 100) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: chartRequests.slice(index, index + 100) }) });
   }

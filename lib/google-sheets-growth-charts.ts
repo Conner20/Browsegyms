@@ -5,7 +5,12 @@ const FINANCIAL = "Financial growth";
 const DEMAND = "User and demand growth";
 export const FINANCIAL_SELECTION_RANGE = "'Financial growth'!B1";
 
-export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[], previousSelection?: string) {
+export const GROWTH_METRIC_SELECTION_RANGES: Record<string, string> = {
+  [FINANCIAL]: "'Financial growth'!E1",
+  [DEMAND]: "'User and demand growth'!E1",
+};
+
+export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[], previousSelection?: string, previousMetrics: Record<string, string> = {}) {
   const requests: object[] = [];
   for (const title of [FINANCIAL, DEMAND]) {
     const data = sheets.find(sheet => sheet.title === title);
@@ -46,6 +51,34 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
         { repeatCell: { range: range(0, 1, 1, 2), cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.98, blue: 0.9 }, textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
       );
     }
+    const metricNames = data.values[0].slice(financial ? 2 : 1, financial ? 7 : 8).map(String);
+    const metric = metricNames.includes(previousMetrics[title]) ? previousMetrics[title] : "All metrics";
+    requests.push(
+      { updateCells: { range: range(0, 1, 3, 5), rows: [{ values: [textCell("Choose metric →"), textCell(metric)] }], fields: "userEnteredValue" } },
+      { setDataValidation: { range: range(0, 1, 4, 5), rule: { condition: { type: "ONE_OF_LIST", values: ["All metrics", ...metricNames].map(userEnteredValue => ({ userEnteredValue })) }, strict: true, showCustomUi: true, inputMessage: "Show all metrics together or one metric at a time." } } },
+      { repeatCell: { range: range(0, 1, 4, 5), cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.98, blue: 0.9 }, textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
+    );
+    // Keep the source tables intact. Unselected series emit #N/A rather than zero,
+    // so Sheets draws only the selected lines and never invents zero-value trends.
+    const columnLetter = (index: number) => String.fromCharCode(65 + index);
+    const rawDate = columnLetter(firstColumn);
+    const headerRow = chartStart + 1, firstDataRow = headerRow + 1;
+    const formulaCell = (formulaValue: string) => ({ userEnteredValue: { formulaValue } });
+    const headerCells = [textCell("Date"), ...metricNames.map((_, index) => {
+      const header = `$${columnLetter(firstColumn + index + 1)}$${headerRow}`;
+      return formulaCell(`=IF(OR($E$1="All metrics",$E$1=${header}),${header},"")`);
+    })];
+    const dataCells = [formulaCell(`=ARRAYFORMULA(IF($${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}="","",$${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}))`), ...metricNames.map((_, index) => {
+      const column = columnLetter(firstColumn + index + 1);
+      return formulaCell(`=ARRAYFORMULA(IF($${rawDate}$${firstDataRow}:$${rawDate}$${chartEnd}="","",IF(OR($E$1="All metrics",$E$1=$${column}$${headerRow}),$${column}$${firstDataRow}:$${column}$${chartEnd},NA())))`);
+    })];
+    firstColumn = 20;
+    requests.push(
+      { updateCells: { range: range(chartStart, chartStart + 2, firstColumn, firstColumn + metricNames.length + 1), rows: [{ values: headerCells }, { values: dataCells }], fields: "userEnteredValue" } },
+      { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 20, endIndex: 28 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
+      { repeatCell: { range: range(chartStart + 1, chartEnd, 20, 21), cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "mmm d, yyyy" } } }, fields: "userEnteredFormat.numberFormat" } },
+      { repeatCell: { range: range(chartStart + 1, chartEnd, 21, financial ? 25 : 28), cell: { userEnteredFormat: { numberFormat: financial ? { type: "CURRENCY", pattern: '"$"#,##0.00' } : { type: "NUMBER", pattern: "0" } } }, fields: "userEnteredFormat.numberFormat" } },
+    );
     const marker = `fitting-in:${financial ? "financial" : "demand"}-growth`;
     const source = (column: number) => ({ sourceRange: { sources: [range(chartStart, chartEnd, column, column + 1)] } });
     const spec = {

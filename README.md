@@ -103,3 +103,11 @@ The retired **Fitting In Metrics** master tab is deleted only after the replacem
 reports and charts are successfully written; no other custom tabs are removed.
 
 Growth charts appear above their sortable data tables (headers on row 28).
+
+Both growth charts have a **Choose metric** dropdown at E1, defaulting to
+**All metrics**. Pick one metric to isolate its line; choose All metrics to restore
+all lines. On Financial growth this works together with the gym selection at B1.
+Valid gym and metric choices survive scheduled refreshes. Metrics are masked in
+hidden chart-only ranges, preserving the complete sortable data tables and the
+separate dollar/customer axes. Blank dates and inactive series are not plotted as
+zero. Chart controls require Google Sheets edit access.
