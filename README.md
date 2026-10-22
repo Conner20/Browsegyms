@@ -117,3 +117,5 @@ used by these tests. To apply changes, deploy the sync code and run the existing
 authenticated `/api/cron/google-sheets` route or wait for its scheduled run.
 
 The Overview and Landing-page demand tabs contain only the dashboard metrics, and Gym demand funnel uses the dashboard column order. Gym claim clicks shows all claim clicks, newest first, when the dropdown is “Select a gym”; choosing a gym filters the six claim-click detail fields to that gym; the selected gym persists across refreshes.
+
+Overview has an All time (default), Past week, Past month, or Past year dropdown. Periods match the admin overview’s rolling 7/30/365-day windows at sync time, and selections persist across refreshes.

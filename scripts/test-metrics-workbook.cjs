@@ -46,7 +46,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert.deepEqual(rows(book.getWorksheet('Revenue by gym'))[0].slice(0, 8), ['Alpha Gym', 1, 0, 12, 12, 0, 1, 12]);
   assert.equal(rows(book.getWorksheet('User spending'))[0][1], 12);
   assert.equal(rows(book.getWorksheet('Users'))[0][5], 'Alpha Gym, Beta Gym', 'gym permissions remain on Users');
-  assert.deepEqual(rows(book.getWorksheet('Overview')), [
+  assert.deepEqual(rows(book.getWorksheet('Overview')).map(row => row.slice(0, 2)), [
     ['Total Users / Gym Users', '1 / 0'], ['Visitors / Visits', '1 / 1'],
     ['Day-pass Clicks / Confirmed / User Reported', '2 / 1 / 1'],
     ['Membership Clicks / Confirmed / User Reported', '0 / 0 / 0'],
@@ -68,6 +68,25 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert.equal(rows(book.getWorksheet('Unclaimed gym opportunity'))[0][7], 20);
   assert.equal(filterCategory({ filter: 'Pool' }), 'Amenities');
   assert.equal(filterCategory({ filter: 'Open' }), 'Gym type');
+  const savedEvents = events;
+  const savedUserDate = users[0].createdAt;
+  const daysAgo = days => new Date(Date.now() - days * 86400000);
+  users[0].createdAt = daysAgo(40);
+  events = [
+    { ...event('old', 'DAY_PASS_CLICKED'), createdAt: daysAgo(40) },
+    { ...event('recent-response', 'DAY_PASS_GYM_CONFIRMED', 'g1', { claimClickId: 'old' }), createdAt: daysAgo(1) },
+    { ...event('month', 'DAY_PASS_CLICKED'), createdAt: daysAgo(10) },
+    { ...event('week', 'DAY_PASS_CLICKED'), createdAt: daysAgo(1) },
+    { ...event('year', 'MEMBERSHIP_SIGNUP'), createdAt: daysAgo(100) },
+    { ...event('ancient', 'MEMBERSHIP_SIGNUP'), createdAt: daysAgo(400) },
+  ];
+  const periodBook = await buildAdminMetricsWorkbook();
+  const periodRows = rows(periodBook.getWorksheet('Overview'));
+  assert.deepEqual(periodRows[0].slice(1), ['1 / 0', '0 / 0', '0 / 0', '1 / 0']);
+  assert.deepEqual(periodRows[2].slice(1), ['3 / 1 / 0', '1 / 0 / 0', '2 / 0 / 0', '3 / 1 / 0'], 'recent confirmation stays attributed to its original click period');
+  assert.deepEqual(periodRows[4].slice(1), ['0 / 2', '0 / 0', '0 / 0', '0 / 1']);
+  events = savedEvents;
+  users[0].createdAt = savedUserDate;
   const binary = await book.xlsx.writeBuffer();
   const ExcelJS = require('exceljs'); const roundtrip = new ExcelJS.Workbook(); await roundtrip.xlsx.load(binary);
   assert.equal(roundtrip.getWorksheet('Revenue by gym').getCell('D2').value, 12);
@@ -78,13 +97,13 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   metadata.sheets.push({ properties: { sheetId: 98, title: 'Fitting In Metrics' } }, { properties: { sheetId: 97, title: 'Start here' } });
   metadata.sheets.push(...removedTabs.map((title, index) => ({ properties: { sheetId: 500 + index, title } })));
   const requests = []; const writes = [];
-  let selectedClaimGym; let selectedGym; const selectedMetrics = {}; let nextChartId = 10000; let failCharts = false;
+  let selectedOverviewPeriod; let selectedClaimGym; let selectedGym; const selectedMetrics = {}; let nextChartId = 10000; let failCharts = false;
   global.fetch = async (url, init) => {
     if (url.includes('oauth2')) return Response.json({ access_token: 'fixture-token' });
     const body = init?.body ? JSON.parse(init.body) : {};
     if (url.includes('/values/') && !init?.method) {
       const cell = decodeURIComponent(url.split('/values/')[1]);
-      const value = cell.includes('Gym claim clicks') ? selectedClaimGym : cell.endsWith('!B1') ? selectedGym : selectedMetrics[cell.includes('Financial growth') ? 'Financial growth' : 'User and demand growth'];
+      const value = cell.includes('Overview') ? selectedOverviewPeriod : cell.includes('Gym claim clicks') ? selectedClaimGym : cell.endsWith('!B1') ? selectedGym : selectedMetrics[cell.includes('Financial growth') ? 'Financial growth' : 'User and demand growth'];
       return Response.json({ values: value ? [[value]] : [] });
     }
     if (failCharts && body.requests?.some(request => request.updateChartSpec || request.addChart)) return new Response('Chart request failed', { status: 500 });
@@ -95,7 +114,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
       if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.endColumnIndex === 2) {
         const value = request.updateCells.rows[0].values[1].userEnteredValue.stringValue;
         const title = metadata.sheets.find(sheet => sheet.properties.sheetId === request.updateCells.range.sheetId).properties.title;
-        if (title === 'Gym claim clicks') selectedClaimGym = value; else selectedGym = value;
+        if (title === 'Overview') selectedOverviewPeriod = value; else if (title === 'Gym claim clicks') selectedClaimGym = value; else selectedGym = value;
       }
       if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.startColumnIndex === 3) {
         const title = metadata.sheets.find(sheet => sheet.properties.sheetId === request.updateCells.range.sheetId).properties.title;
@@ -136,7 +155,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert(requests.some(request => request.setDataValidation?.rule.condition.type === 'ONE_OF_RANGE'));
   assert.deepEqual(selectedMetrics, { 'Financial growth': 'All metrics', 'User and demand growth': 'All metrics' });
   const metricDropdowns = requests.filter(request => request.setDataValidation?.rule.condition.type === 'ONE_OF_LIST');
-  assert.deepEqual(metricDropdowns.map(request => request.setDataValidation.rule.condition.values.length), [6, 8], 'every financial and demand metric is selectable');
+  assert.deepEqual(metricDropdowns.map(request => request.setDataValidation.rule.condition.values.length), [6, 8, 4], 'every financial and demand metric is selectable');
   const chartFormulas = requests.flatMap(request => request.updateCells?.rows ?? []).flatMap(row => row.values ?? []).map(cell => cell.userEnteredValue?.formulaValue).filter(Boolean);
   assert(!chartFormulas.some(formula => formula.includes('NA()') || formula.includes('#N/A')), 'chart formulas must not generate error labels');
   const masks = chartFormulas.filter(formula => formula.startsWith('=ARRAYFORMULA') && formula.includes('$E$1='));
@@ -155,11 +174,14 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert(requests.filter(request => request.addChart).every(request => request.addChart.chart.spec.basicChart.domains[0].domain.sourceRange.sources[0].startColumnIndex === 20), 'both charts use selector-controlled data');
   selectedMetrics['Financial growth'] = 'Customers supplied';
   selectedMetrics['User and demand growth'] = 'Users';
+  assert.equal(selectedOverviewPeriod, 'All time');
+  selectedOverviewPeriod = 'Past month';
   selectedClaimGym = 'Beta Gym';
   selectedGym = 'Beta Gym';
   await syncAdminMetricsToGoogleSheets();
   assert.equal(selectedMetrics['Financial growth'], 'Customers supplied');
   assert.equal(selectedMetrics['User and demand growth'], 'Users');
+  assert.equal(selectedOverviewPeriod, 'Past month');
   assert.equal(selectedClaimGym, 'Beta Gym');
   assert.equal(selectedGym, 'Beta Gym', 'scheduled refresh preserves a valid gym selection');
   assert.equal(requests.filter(request => request.addChart).length, 2, 'repeat sync updates charts without duplicates');

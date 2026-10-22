@@ -55,25 +55,33 @@ export async function buildAdminMetricsWorkbook() {
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Fitting In"; workbook.created = new Date(); workbook.modified = new Date();
-  const visitors = new Set(events.filter(event => event.eventType === "VISIT").map(actor));
-  const visits = new Set(events.filter(event => event.eventType === "VISIT").map(event => event.visitId));
-
   const summary = workbook.addWorksheet("Overview");
-  summary.columns = [{ header: "Metric", key: "metric" }, { header: "Value", key: "value" }];
-  const overviewClaims = (prefix: "DAY_PASS" | "MEMBERSHIP") => {
-    const clickType = `${prefix}_CLICKED` as "DAY_PASS_CLICKED" | "MEMBERSHIP_CLICKED";
-    const clicks = new Set(events.filter(event => event.eventType === clickType).map(event => event.id));
-    const keys = (suffix: string) => new Set(events.filter(event => event.eventType === `${prefix}_${suffix}`).map(event => confirmedClickId(event, clickType)));
-    const confirmed = keys("GYM_CONFIRMED"), declined = keys("GYM_DECLINED");
-    return `${clicks.size} / ${[...confirmed].filter(id => clicks.has(id)).length} / ${[...keys("CLAIM_CONFIRMED")].filter(id => clicks.has(id) && !confirmed.has(id) && !declined.has(id)).length}`;
+  summary.columns = ["Metric", "Value", "Past week", "Past month", "Past year"].map(header => ({ header, key: header }));
+  const overviewNow = Date.now();
+  const overviewForPeriod = (days: number) => {
+    const since = days ? overviewNow - days * 86_400_000 : -Infinity;
+    const scopedEvents = events.filter(event => event.createdAt.getTime() >= since);
+    const scopedUsers = users.filter(user => !user.deletedAt && user.createdAt.getTime() >= since);
+    const visitEvents = scopedEvents.filter(event => event.eventType === "VISIT");
+    const count = (type: string) => scopedEvents.filter(event => event.eventType === type).length;
+    const claims = (prefix: "DAY_PASS" | "MEMBERSHIP") => {
+      const clickType = `${prefix}_CLICKED` as "DAY_PASS_CLICKED" | "MEMBERSHIP_CLICKED";
+      const clicks = new Set(scopedEvents.filter(event => event.eventType === clickType).map(event => event.id));
+      // Responses can arrive after the click; scope purchases by the original click, as the dashboard does.
+      const keys = (suffix: string) => new Set(events.filter(event => event.eventType === `${prefix}_${suffix}`).map(event => confirmedClickId(event, clickType)));
+      const confirmed = keys("GYM_CONFIRMED"), declined = keys("GYM_DECLINED");
+      return `${clicks.size} / ${[...confirmed].filter(id => clicks.has(id)).length} / ${[...keys("CLAIM_CONFIRMED")].filter(id => clicks.has(id) && !confirmed.has(id) && !declined.has(id)).length}`;
+    };
+    return [
+      `${scopedUsers.length} / ${scopedUsers.filter(user => user.role === "GYM").length}`,
+      `${new Set(visitEvents.map(actor)).size} / ${new Set(visitEvents.map(event => event.visitId)).size}`,
+      claims("DAY_PASS"), claims("MEMBERSHIP"),
+      `${count("DAY_PASS_SIGNUP")} / ${count("MEMBERSHIP_SIGNUP")}`,
+    ];
   };
-  summary.addRows([
-    ["Total Users / Gym Users", `${users.filter(user => !user.deletedAt).length} / ${users.filter(user => !user.deletedAt && user.role === "GYM").length}`],
-    ["Visitors / Visits", `${visitors.size} / ${visits.size}`],
-    ["Day-pass Clicks / Confirmed / User Reported", overviewClaims("DAY_PASS")],
-    ["Membership Clicks / Confirmed / User Reported", overviewClaims("MEMBERSHIP")],
-    ["Day-pass Signups / Membership Signups", `${events.filter(event => event.eventType === "DAY_PASS_SIGNUP").length} / ${events.filter(event => event.eventType === "MEMBERSHIP_SIGNUP").length}`],
-  ]);
+  const overviewPeriods = [0, 7, 30, 365].map(overviewForPeriod);
+  ["Total Users / Gym Users", "Visitors / Visits", "Day-pass Clicks / Confirmed / User Reported", "Membership Clicks / Confirmed / User Reported", "Day-pass Signups / Membership Signups"].forEach((label, index) => summary.addRow([label, ...overviewPeriods.map(period => period[index])]));
+  for (const column of [3, 4, 5]) summary.getColumn(column).hidden = true;
   formatSheet(summary);
 
   const dailyMap = new Map<string, { sourceEvents: ExportEvent[] }>();
