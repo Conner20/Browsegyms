@@ -69,9 +69,9 @@ by Git and must be stored securely with the database backup until the rollback w
 
 ### Metrics workbook layout
 
-The workbook mirrors the admin overview with these 15 tabs, in page order:
+The workbook mirrors the admin overview with these 16 tabs, in page order:
 Overview, Users, Gym claim log, Landing-page demand, User and demand growth,
-Gym demand funnel, Claim activity log, Popular cities, Filter usage,
+Gym demand funnel, Gym claim clicks, Claim activity log, Popular cities, Filter usage,
 Financial Metrics, Financial growth, Revenue by gym, Unclaimed gym opportunity,
 User spending, and Revenue by offer. Users retains gym permissions; the funnel
 includes the overview's day-pass and membership click rates.
@@ -115,3 +115,5 @@ request tests, including report coverage, Eastern time and DST conversion,
 chart preservation, and safe retirement of old tabs. No external services are
 used by these tests. To apply changes, deploy the sync code and run the existing
 authenticated `/api/cron/google-sheets` route or wait for its scheduled run.
+
+The Overview and Landing-page demand tabs contain only the dashboard metrics, and Gym demand funnel uses the dashboard column order. Gym claim clicks provides a gym dropdown and the six claim-click detail fields; the selected gym persists across refreshes.

@@ -1,3 +1,4 @@
+import { claimClickRequests, CLAIM_CLICKS_TITLE, CLAIM_GYM_SELECTION_RANGE } from "@/lib/google-sheets-claim-clicks";
 import { EASTERN_TIMESTAMP_FORMAT, METRICS_TIME_ZONE, easternTimestampSerial } from "@/lib/metrics-reporting-time";
 import { growthChartRequests, FINANCIAL_SELECTION_RANGE, GROWTH_METRIC_SELECTION_RANGES } from "@/lib/google-sheets-growth-charts";
 import { createSign } from "node:crypto";
@@ -77,7 +78,7 @@ function worksheetValues(workbook: ExcelJS.Workbook): SheetValues[] {
     const values: (string | number | boolean)[][] = [];
     const headers = Array.from({ length: columns }, (_, index) => sheet.getRow(1).getCell(index + 1).text);
     const formats = headers.map(header => {
-      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed at|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : EASTERN_TIMESTAMP_FORMAT };
+      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed when|Claimed at|Clicked|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : EASTERN_TIMESTAMP_FORMAT };
       if (/revenue|spending|spent|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) return { type: "CURRENCY", pattern: '"$"#,##0.00' };
       if (/rate/i.test(header)) return { type: "NUMBER", pattern: '0.0"%"' };
       return null;
@@ -93,7 +94,7 @@ function worksheetValues(workbook: ExcelJS.Workbook): SheetValues[] {
       }));
     });
     if (!values.length) values.push([""]);
-    return { startRow: ["Financial growth", "User and demand growth"].includes(sheet.name) ? 27 : 0, title: sheet.name, values, rows: values.length, columns, hidden: sheet.state !== "visible", widths: headers.map((_, index) => formats[index]?.type === "DATE_TIME" ? 260 : Math.min(360, Math.max(120, (sheet.getColumn(index + 1).width ?? 20) * 7))), moneyRows: ["Overview", "Financial Metrics"].includes(sheet.name) ? values.flatMap((row, index) => index > 0 && typeof row[1] === "number" && /revenue|MRR/i.test(String(row[0])) && !/Revenue-generating gyms/.test(String(row[0])) ? [index] : []) : [], hiddenColumns: headers.flatMap((_, index) => sheet.getColumn(index + 1).hidden ? [index] : []), formats };
+    return { startRow: ["Financial growth", "User and demand growth"].includes(sheet.name) ? 27 : sheet.name === CLAIM_CLICKS_TITLE ? 4 : 0, title: sheet.name, values, rows: values.length, columns, hidden: sheet.state !== "visible", widths: headers.map((_, index) => formats[index]?.type === "DATE_TIME" ? 260 : Math.min(360, Math.max(120, (sheet.getColumn(index + 1).width ?? 20) * 7))), moneyRows: ["Overview", "Financial Metrics"].includes(sheet.name) ? values.flatMap((row, index) => index > 0 && typeof row[1] === "number" && /revenue|MRR/i.test(String(row[0])) && !/Revenue-generating gyms/.test(String(row[0])) ? [index] : []) : [], hiddenColumns: headers.flatMap((_, index) => sheet.getColumn(index + 1).hidden ? [index] : []), formats };
   });
 }
 
@@ -111,7 +112,7 @@ function valueChunks(sheet: SheetValues) {
       bytes += rowBytes;
       end += 1;
     }
-    chunks.push({ range: `${quoteSheet(sheet.title)}!${sheet.title === "Financial growth" ? "AD" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
+    chunks.push({ range: `${quoteSheet(sheet.title)}!${sheet.title === "Financial growth" ? "AD" : sheet.title === CLAIM_CLICKS_TITLE ? "J" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
     start = end;
   }
   return chunks;
@@ -130,6 +131,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   let metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId,charts(chartId,spec.altText))`, token);
   // Read all controls before the managed refresh clears their cells.
   const controls = [
+    { key: "claimGym", title: CLAIM_CLICKS_TITLE, range: CLAIM_GYM_SELECTION_RANGE },
     { key: "gym", title: "Financial growth", range: FINANCIAL_SELECTION_RANGE },
     ...Object.entries(GROWTH_METRIC_SELECTION_RANGES).map(([title, range]) => ({ key: title, title, range })),
   ].filter(control => metadata.sheets?.some(sheet => sheet.properties?.title === control.title));
@@ -159,14 +161,14 @@ export async function syncAdminMetricsToGoogleSheets() {
   const formatRequests = [{ updateSpreadsheetProperties: { properties: { timeZone: METRICS_TIME_ZONE }, fields: "timeZone" } }, ...sheets.flatMap((sheet, index) => {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
-    const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, 1_000);
+    const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, sheet.title === CLAIM_CLICKS_TITLE ? (sheets.find(item => item.title === "Revenue by gym")?.rows ?? 0) + 1 : 0, 1_000);
     const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
     const tableRows = sheet.title === "Financial growth" ? new Set(sheet.values.slice(1).map(row => row[1])).size + 1 : sheet.rows;
-    const tableColumns = sheet.title === "Financial growth" ? 6 : sheet.columns;
+    const tableColumns = ["Financial growth", CLAIM_CLICKS_TITLE].includes(sheet.title) ? 6 : sheet.columns;
     const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, tableRows), startColumnIndex: 0, endColumnIndex: tableColumns };
     return [
-      { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
+      { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.title === CLAIM_CLICKS_TITLE ? 5 : sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
       { repeatCell: { range, cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { fontFamily: "Arial", fontSize: 10 }, verticalAlignment: "MIDDLE", wrapStrategy: "CLIP", numberFormat: { type: "NUMBER", pattern: "0.##" } } }, fields: "userEnteredFormat" } },
       { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: sheet.startRow, endIndex: sheet.startRow + 1 }, properties: { pixelSize: 60 }, fields: "pixelSize" } },
       { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: columnCount }, properties: { hiddenByUser: false }, fields: "hiddenByUser" } },
@@ -176,7 +178,7 @@ export async function syncAdminMetricsToGoogleSheets() {
       ...(metadata.sheets?.find(item => item.properties?.sheetId === sheetId)?.bandedRanges ?? []).map(band => ({ deleteBanding: { bandedRangeId: band.bandedRangeId } })),
       { addBanding: { bandedRange: { range, rowProperties: { headerColor: { red: 0.133, green: 0.773, blue: 0.369 }, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: { red: 0.94, green: 0.99, blue: 0.96 } } } } },
       { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + 1, startColumnIndex: 0, endColumnIndex: tableColumns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
-      sheet.title === "Financial growth" ? { clearBasicFilter: { sheetId } } : { setBasicFilter: { filter: { range } } },
+      ["Financial growth", CLAIM_CLICKS_TITLE].includes(sheet.title) ? { clearBasicFilter: { sheetId } } : { setBasicFilter: { filter: { range } } },
     ];
   })];
 
@@ -188,7 +190,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   for (let index = 0; index < chunks.length; index += 10) {
     await googleRequest(`${baseUrl}/values:batchUpdate`, token, { method: "POST", body: JSON.stringify({ valueInputOption: "RAW", data: chunks.slice(index, index + 10) }) });
   }
-  const chartRequests = growthChartRequests(sheets, metadata.sheets ?? [], previousSelections.gym, previousSelections);
+  const chartRequests = [...growthChartRequests(sheets, metadata.sheets ?? [], previousSelections.gym, previousSelections), ...claimClickRequests(sheets, propertiesByTitle.get(CLAIM_CLICKS_TITLE)!.sheetId!, previousSelections.claimGym)];
   for (let index = 0; index < chartRequests.length; index += 100) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: chartRequests.slice(index, index + 100) }) });
   }

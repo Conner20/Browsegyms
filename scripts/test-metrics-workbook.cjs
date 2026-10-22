@@ -27,7 +27,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
 (async () => {
   const book = await buildAdminMetricsWorkbook();
   assert.equal(book.worksheets[0].name, 'Overview');
-  const expectedTabs = ['Overview', 'Users', 'Gym claim log', 'Landing-page demand', 'User and demand growth', 'Gym demand funnel', 'Claim activity log', 'Popular cities', 'Filter usage', 'Financial Metrics', 'Financial growth', 'Revenue by gym', 'Unclaimed gym opportunity', 'User spending', 'Revenue by offer'];
+  const expectedTabs = ['Overview', 'Users', 'Gym claim log', 'Landing-page demand', 'User and demand growth', 'Gym demand funnel', 'Gym claim clicks', 'Claim activity log', 'Popular cities', 'Filter usage', 'Financial Metrics', 'Financial growth', 'Revenue by gym', 'Unclaimed gym opportunity', 'User spending', 'Revenue by offer'];
   assert.deepEqual(book.worksheets.map(sheet => sheet.name), expectedTabs, 'only the admin overview reports remain');
   const removedTabs = ['User gym access', 'Signup activity', 'Financial ledger', 'Daily metrics', 'Daily gym demand', 'Daily filter usage', 'Daily city activity', 'Raw events', 'Audit notes'];
   for (const name of removedTabs) assert(!book.getWorksheet(name));
@@ -46,7 +46,19 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert.deepEqual(rows(book.getWorksheet('Revenue by gym'))[0].slice(0, 8), ['Alpha Gym', 1, 0, 12, 12, 0, 1, 12]);
   assert.equal(rows(book.getWorksheet('User spending'))[0][1], 12);
   assert.equal(rows(book.getWorksheet('Users'))[0][5], 'Alpha Gym, Beta Gym', 'gym permissions remain on Users');
+  assert.deepEqual(rows(book.getWorksheet('Overview')), [
+    ['Total Users / Gym Users', '1 / 0'], ['Visitors / Visits', '1 / 1'],
+    ['Day-pass Clicks / Confirmed / User Reported', '2 / 1 / 1'],
+    ['Membership Clicks / Confirmed / User Reported', '0 / 0 / 0'],
+    ['Day-pass Signups / Membership Signups', '0 / 0'],
+  ]);
+  assert.deepEqual(rows(book.getWorksheet('Landing-page demand')).map(row => row[0]), ['Unique visitors', 'Visits', 'Gym profiles opened', 'Directions clicks', 'Favorites added', 'Gyms compared', 'Unique Claim Day Pass clickers', 'Users who got a day pass', 'Signups after day-pass click', 'Unique Claim Membership clickers', 'Users who got a membership', 'Signups after membership click']);
+  assert(book.getWorksheet('Gym claim log').getRow(1).values.includes('Claimed when'));
+  assert.deepEqual(book.getWorksheet('Gym claim clicks').getRow(1).values.slice(1, 7), ['Gym name', 'User email', 'Offer', 'Clicked', 'Gym response', 'Gym confirmed at']);
   const funnel = book.getWorksheet('Gym demand funnel');
+  assert.deepEqual(funnel.getRow(1).values.slice(1), ['Gym', 'Profile opens', 'Favorites', 'Compared', 'Website visits', 'Day-pass clicks / confirms', 'Day-pass signups', 'Day-pass rate', 'Membership clicks / confirms', 'Membership signups', 'Membership rate']);
+  assert.equal(funnel.getCell('F2').value, '1 / 1');
+
   const rateColumn = funnel.getRow(1).values.indexOf('Day-pass rate');
   assert.equal(funnel.getRow(2).getCell(rateColumn).value, 100);
   const userRow = rows(book.getWorksheet('Users'))[0];
@@ -66,13 +78,13 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   metadata.sheets.push({ properties: { sheetId: 98, title: 'Fitting In Metrics' } }, { properties: { sheetId: 97, title: 'Start here' } });
   metadata.sheets.push(...removedTabs.map((title, index) => ({ properties: { sheetId: 500 + index, title } })));
   const requests = []; const writes = [];
-  let selectedGym; const selectedMetrics = {}; let nextChartId = 10000; let failCharts = false;
+  let selectedClaimGym; let selectedGym; const selectedMetrics = {}; let nextChartId = 10000; let failCharts = false;
   global.fetch = async (url, init) => {
     if (url.includes('oauth2')) return Response.json({ access_token: 'fixture-token' });
     const body = init?.body ? JSON.parse(init.body) : {};
     if (url.includes('/values/') && !init?.method) {
       const cell = decodeURIComponent(url.split('/values/')[1]);
-      const value = cell.endsWith('!B1') ? selectedGym : selectedMetrics[cell.includes('Financial growth') ? 'Financial growth' : 'User and demand growth'];
+      const value = cell.includes('Gym claim clicks') ? selectedClaimGym : cell.endsWith('!B1') ? selectedGym : selectedMetrics[cell.includes('Financial growth') ? 'Financial growth' : 'User and demand growth'];
       return Response.json({ values: value ? [[value]] : [] });
     }
     if (failCharts && body.requests?.some(request => request.updateChartSpec || request.addChart)) return new Response('Chart request failed', { status: 500 });
@@ -80,7 +92,11 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
     if (url.endsWith('/values:batchUpdate')) writes.push(...body.data);
     if (url.endsWith(':batchUpdate') && body.requests) for (const request of body.requests) {
       requests.push(request);
-      if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.endColumnIndex === 2) selectedGym = request.updateCells.rows[0].values[1].userEnteredValue.stringValue;
+      if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.endColumnIndex === 2) {
+        const value = request.updateCells.rows[0].values[1].userEnteredValue.stringValue;
+        const title = metadata.sheets.find(sheet => sheet.properties.sheetId === request.updateCells.range.sheetId).properties.title;
+        if (title === 'Gym claim clicks') selectedClaimGym = value; else selectedGym = value;
+      }
       if (request.updateCells?.range.startRowIndex === 0 && request.updateCells?.range.startColumnIndex === 3) {
         const title = metadata.sheets.find(sheet => sheet.properties.sheetId === request.updateCells.range.sheetId).properties.title;
         selectedMetrics[title] = request.updateCells.rows[0].values[1].userEnteredValue.stringValue;
@@ -106,6 +122,11 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert(requests.some(request => request.repeatCell?.cell.userEnteredFormat?.numberFormat?.type === 'CURRENCY'));
   assert(writes.some(write => write.range === "'Financial growth'!AD28"));
   assert(writes.some(write => write.range === "'User and demand growth'!A28"));
+  assert.equal(selectedClaimGym, 'Select a gym');
+  const claimId = metadata.sheets.find(sheet => sheet.properties.title === 'Gym claim clicks').properties.sheetId;
+  const claimFormula = requests.find(request => request.updateCells?.range.sheetId === claimId && request.updateCells.range.startRowIndex === 5).updateCells.rows[0].values[0].userEnteredValue.formulaValue;
+  assert(claimFormula.includes('FILTER($J$6:$O$') && claimFormula.includes('$P$6:$P$') && claimFormula.includes('VLOOKUP($B$1,'));
+  assert(writes.some(write => write.range === "'Gym claim clicks'!J5"));
   assert.equal(selectedGym, 'All gyms', 'financial chart defaults to the aggregate series');
   assert.equal(requests.filter(request => request.addChart).length, 2);
   assert.equal(requests.filter(request => request.deleteSheet).length, 11);
@@ -134,14 +155,16 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert(requests.filter(request => request.addChart).every(request => request.addChart.chart.spec.basicChart.domains[0].domain.sourceRange.sources[0].startColumnIndex === 20), 'both charts use selector-controlled data');
   selectedMetrics['Financial growth'] = 'Customers supplied';
   selectedMetrics['User and demand growth'] = 'Users';
+  selectedClaimGym = 'Beta Gym';
   selectedGym = 'Beta Gym';
   await syncAdminMetricsToGoogleSheets();
   assert.equal(selectedMetrics['Financial growth'], 'Customers supplied');
   assert.equal(selectedMetrics['User and demand growth'], 'Users');
+  assert.equal(selectedClaimGym, 'Beta Gym');
   assert.equal(selectedGym, 'Beta Gym', 'scheduled refresh preserves a valid gym selection');
   assert.equal(requests.filter(request => request.addChart).length, 2, 'repeat sync updates charts without duplicates');
   assert.equal(requests.filter(request => request.updateChartSpec).length, 2);
-  assert.equal(metadata.sheets.length, 16, 'repeat sync creates no duplicate tabs');
+  assert.equal(metadata.sheets.length, 17, 'repeat sync creates no duplicate tabs');
   assert(requests.some(request => request.deleteBanding), 'repeat sync replaces managed bands');
   metadata.sheets.push({ properties: { sheetId: 98, title: 'Fitting In Metrics' } }, { properties: { sheetId: 97, title: 'Start here' } });
   failCharts = true;
@@ -156,11 +179,20 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   selectedMetrics['Financial growth'] = 'Removed metric';
   selectedMetrics['User and demand growth'] = 'Removed metric';
   await syncAdminMetricsToGoogleSheets();
+  assert.equal(selectedClaimGym, 'Select a gym');
   assert.equal(selectedGym, 'All gyms', 'missing gym falls back to All gyms');
   assert.deepEqual(selectedMetrics, { 'Financial growth': 'All metrics', 'User and demand growth': 'All metrics' }, 'invalid metric selections reset safely');
   const duplicateGyms = { title: 'Financial growth', rows: 4, values: [['Gym', 'Date', 'Total', 'Day', 'Membership', 'MRR', 'Customers', 'ID'], ['All gyms (combined)', 46000, 30, 30, 0, 0, 2, 'all'], ['Twin Gym', 46000, 10, 10, 0, 0, 1, 'a'], ['Twin Gym', 46000, 20, 20, 0, 0, 1, 'b']] };
   const duplicateRequests = growthChartRequests([duplicateGyms], [{ properties: { sheetId: 1, title: duplicateGyms.title } }]);
   const options = duplicateRequests.find(request => request.updateCells?.range.startColumnIndex === 17).updateCells.rows;
   assert.deepEqual(options.slice(1).map(row => row.values[0].userEnteredValue.stringValue), ['All gyms', 'Twin Gym [a]', 'Twin Gym [b]']);
+  const { claimClickRequests } = require('../lib/google-sheets-claim-clicks.ts');
+  const claimOptions = claimClickRequests([
+    { title: 'Gym claim clicks', rows: 1, values: [['Gym name', 'User email', 'Offer', 'Clicked', 'Gym response', 'Gym confirmed at', 'Gym ID']] },
+    { title: 'Revenue by gym', rows: 3, values: [['Gym', 'Gym ID'], ['Twin Gym', 'a'], ['Twin Gym', 'b']] },
+  ], 12, 'Twin Gym [b]');
+  assert.deepEqual(claimOptions.find(request => request.updateCells?.range.startColumnIndex === 17).updateCells.rows.map(row => row.values[0].userEnteredValue.stringValue), ['Select a gym', 'Twin Gym [a]', 'Twin Gym [b]'], 'dropdown includes gyms without clicks and distinguishes duplicate names');
+  assert.equal(claimOptions[0].updateCells.rows[0].values[1].userEnteredValue.stringValue, 'Twin Gym [b]');
+  assert(claimOptions.find(request => request.updateCells?.range.startRowIndex === 5).updateCells.rows[0].values[0].userEnteredValue.formulaValue.includes('$J$6:$O$6'), 'empty data uses a valid range');
   console.log('PASS: section coverage, financial totals, gym lookup, filter categories, empty data, XLSX roundtrip, Google migration and repeat sync.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
