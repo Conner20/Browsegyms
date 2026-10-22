@@ -1,3 +1,4 @@
+import { EASTERN_TIMESTAMP_FORMAT, easternTimestampSerial, easternTimestampText } from "@/lib/metrics-reporting-time";
 import ExcelJS from "exceljs";
 import { getUserAdminStatus } from "@/lib/admin";
 import { filterCategory } from "@/lib/metrics-filter-category";
@@ -55,81 +56,29 @@ export async function buildAdminMetricsWorkbook() {
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Fitting In"; workbook.created = new Date(); workbook.modified = new Date();
-  const eventTypes = [...new Set(events.map(event => event.eventType))].sort();
   const visitors = new Set(events.filter(event => event.eventType === "VISIT").map(actor));
   const visits = new Set(events.filter(event => event.eventType === "VISIT").map(event => event.visitId));
 
   const summary = workbook.addWorksheet("Overview");
   summary.columns = [{ header: "Metric", key: "metric" }, { header: "Value", key: "value" }];
   summary.addRows([
-    { metric: "Export generated", value: new Date().toISOString() }, { metric: "Verified users", value: users.filter(user => !user.deletedAt).length }, { metric: "Deleted users retained", value: users.filter(user => user.deletedAt).length }, { metric: "Gym users", value: users.filter(user => !user.deletedAt && user.role === "GYM").length },
+    { metric: "Export generated", value: new Date().toISOString() }, { metric: "Event timestamp timezone", value: "Eastern time (EST in winter, EDT in summer). Growth charts retain UTC daily dates." }, { metric: "Verified users", value: users.filter(user => !user.deletedAt).length }, { metric: "Deleted users retained", value: users.filter(user => user.deletedAt).length }, { metric: "Gym users", value: users.filter(user => !user.deletedAt && user.role === "GYM").length },
     { metric: "Gyms", value: gyms.length }, { metric: "Claimed gyms", value: gyms.filter(gym => gym.access.length > 0).length }, { metric: "Unique visitors", value: visitors.size }, { metric: "Visits", value: visits.size },
     { metric: "Confirmed day passes", value: resolvedDayPasses.size }, { metric: "Confirmed memberships", value: resolvedMemberships.size },
     { metric: "Total attributed revenue", value: totalAttributedRevenue }, { metric: "Day-pass attributed revenue", value: dayPassAttributedRevenue }, { metric: "Membership attributed revenue", value: membershipAttributedRevenue }, { metric: "Total MRR", value: totalMrr }, { metric: "Unique paying users", value: payingUsers.size }, { metric: "Gym-confirmed paid charges", value: financialRecords.length }, { metric: "User-reported purchases — unclaimed gyms", value:userReportedPurchases }, { metric: "Estimated attributed revenue — unclaimed gyms", value:estimatedAttributedRevenue }, { metric: "Potential customers supplied — unclaimed gyms", value:potentialCustomers },
     ...["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED", "DAY_PASS_SIGNUP", "MEMBERSHIP_SIGNUP"].map(type => ({ metric: type.toLowerCase().replaceAll("_", " "), value: events.filter(event => event.eventType === type).length })),
   ]); formatSheet(summary);
 
-  const coverage = workbook.addWorksheet("Audit notes");
-  coverage.columns = [{ header: "Item", key: "item" }, { header: "Value", key: "value" }];
-  coverage.addRows([
-    { item: "Export generated", value: new Date().toISOString() },
-    { item: "Metrics history begins", value: latestReset?.createdAt.toISOString() ?? "Earliest retained record" },
-    { item: "Daily reporting timezone", value: "UTC" },
-    { item: "Raw behavior records included", value: "Yes — see Raw events" },
-    { item: "Historical gym claim changes", value: "Only the current owner, claim timestamp, assignment source, and last-updated timestamp are retained by the database." },
-    { item: "Historical account role changes", value: "Only the current role is retained by the database." },
-  ]);
-  formatSheet(coverage);
-
-  type DailyRow = { visitors: Set<string>; visits: Set<string>; users: number; gymUsers: number; gyms: number; events: Map<string, number>; actors: Map<string, Set<string>>; sourceEvents: ExportEvent[]; durationMs: number };
-  const emptyDailyRow = (): DailyRow => ({ visitors: new Set(), visits: new Set(), users: 0, gymUsers: 0, gyms: 0, events: new Map(), actors: new Map(), sourceEvents: [], durationMs: 0 });
-  const dailyMap = new Map<string, DailyRow>();
-  const getDailyRow = (date: string) => { const existing = dailyMap.get(date); if (existing) return existing; const created = emptyDailyRow(); dailyMap.set(date, created); return created; };
-  const resetAt = latestReset?.createdAt ?? null;
-  for (const user of users.filter(user => !user.deletedAt)) { if (resetAt && user.createdAt < resetAt) continue; const row = getDailyRow(day(user.createdAt)); row.users++; if (user.role === "GYM") row.gymUsers++; }
-  for (const gym of gyms) { if (resetAt && gym.createdAt < resetAt) continue; getDailyRow(day(gym.createdAt)).gyms++; }
-  for (const event of events) {
-    const row = getDailyRow(day(event.createdAt)), eventActor = actor(event);
-    row.visitors.add(event.visitorId); row.visits.add(event.visitId); row.sourceEvents.push(event); row.durationMs += event.durationMs ?? 0;
-    row.events.set(event.eventType, (row.events.get(event.eventType) ?? 0) + 1);
-    const actors = row.actors.get(event.eventType) ?? new Set<string>(); actors.add(eventActor); row.actors.set(event.eventType, actors);
-  }
+  const dailyMap = new Map<string, { sourceEvents: ExportEvent[] }>();
+  const getDailyRow = (date: string) => {
+    const row = dailyMap.get(date) ?? { sourceEvents: [] };
+    dailyMap.set(date, row);
+    return row;
+  };
+  for (const event of events) getDailyRow(day(event.createdAt)).sourceEvents.push(event);
   const recordedDates = [...users.map(user => user.createdAt), ...gyms.map(gym => gym.createdAt), ...events.map(event => event.createdAt)];
   const today = day(new Date()), firstRecordedDay = latestReset ? day(latestReset.createdAt) : recordedDates.length ? day(new Date(Math.min(...recordedDates.map(date => date.getTime())))) : today;
   for (let cursor = new Date(`${firstRecordedDay}T00:00:00.000Z`), end = new Date(`${today}T00:00:00.000Z`); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) getDailyRow(day(cursor));
-  const daily = workbook.addWorksheet("Daily metrics");
-  daily.columns = [
-    { header: "Date", key: "date" }, { header: "New users", key: "users" }, { header: "Total users", key: "totalUsers" }, { header: "New gym users", key: "gymUsers" }, { header: "Total gym users", key: "totalGymUsers" }, { header: "New gyms", key: "gyms" }, { header: "Total gyms", key: "totalGyms" },
-    { header: "Unique visitors", key: "visitors" }, { header: "Visits", key: "visits" }, { header: "Returning visits", key: "returningVisits" }, { header: "Time spent (minutes)", key: "timeSpent" }, { header: "Gym profile opens", key: "gymOpens" }, { header: "Directions clicks", key: "directions" }, { header: "Website clicks", key: "website" }, { header: "Favorites added", key: "favoritesAdded" }, { header: "Favorites removed", key: "favoritesRemoved" }, { header: "Gyms added to comparison", key: "comparisons" }, { header: "Comparison views", key: "compareViews" },
-    { header: "Day-pass clicks", key: "dayPassClicks" }, { header: "Unique day-pass clickers", key: "uniqueDayPassClickers" }, { header: "Confirmed day passes", key: "confirmedDayPasses" }, { header: "User-confirmed day passes", key: "userConfirmedDayPasses" }, { header: "Day passes confirmed by gym", key: "gymConfirmedDayPasses" }, { header: "Unique users who got a day pass", key: "uniqueDayPassClaimers" }, { header: "Day-pass signups", key: "dayPassSignups" }, { header: "Day-pass click rate", key: "dayPassClickRate" },
-    { header: "Membership clicks", key: "membershipClicks" }, { header: "Unique membership clickers", key: "uniqueMembershipClickers" }, { header: "Confirmed memberships", key: "confirmedMemberships" }, { header: "User-confirmed memberships", key: "userConfirmedMemberships" }, { header: "Memberships confirmed by gym", key: "gymConfirmedMemberships" }, { header: "Unique users who got a membership", key: "uniqueMembershipClaimers" }, { header: "Membership signups", key: "membershipSignups" }, { header: "Membership click rate", key: "membershipClickRate" }, { header: "Filter uses", key: "filterUses" }, { header: "Location searches", key: "locationSearches" },
-    ...eventTypes.map(type => ({ header: `Raw event: ${type}`, key: `raw:${type}` })),
-  ];
-  const eventCount = (row: DailyRow, type: string) => row.events.get(type) ?? 0;
-  const uniqueActors = (row: DailyRow, types: string[]) => new Set(types.flatMap(type => [...(row.actors.get(type) ?? [])]));
-  let totalUsers = resetAt ? users.filter(user => user.createdAt < resetAt).length : 0;
-  let totalGymUsers = resetAt ? users.filter(user => user.createdAt < resetAt && user.role === "GYM").length : 0;
-  let totalGyms = resetAt ? gyms.filter(gym => gym.createdAt < resetAt).length : 0;
-  for (const [date, row] of [...dailyMap].sort(([a], [b]) => a.localeCompare(b))) {
-    totalUsers += row.users; totalGymUsers += row.gymUsers; totalGyms += row.gyms;
-    const profileViewers = uniqueActors(row, ["GYM_OPENED"]), dayPassClickers = uniqueActors(row, ["DAY_PASS_CLICKED"]), membershipClickers = uniqueActors(row, ["MEMBERSHIP_CLICKED"]);
-    const confirmedDayPassEvents = [...resolvedDayPasses.values()].filter(event => day(event.createdAt) === date), confirmedMembershipEvents = [...resolvedMemberships.values()].filter(event => day(event.createdAt) === date), confirmedDayPasses = confirmedDayPassEvents.length, confirmedMemberships = confirmedMembershipEvents.length;
-    daily.addRow({
-      date, users: row.users, totalUsers, gymUsers: row.gymUsers, totalGymUsers, gyms: row.gyms, totalGyms, visitors: row.visitors.size, visits: row.visits.size, returningVisits: Math.max(0, row.visits.size - row.visitors.size), timeSpent: Number((row.durationMs / 60_000).toFixed(2)), gymOpens: eventCount(row, "GYM_OPENED"), directions: eventCount(row, "DIRECTIONS_CLICKED"), website: eventCount(row, "WEBSITE_CLICKED"), favoritesAdded: eventCount(row, "FAVORITE_ADDED"), favoritesRemoved: eventCount(row, "FAVORITE_REMOVED"), comparisons: eventCount(row, "COMPARE_ADDED"), compareViews: eventCount(row, "COMPARE_OPENED"),
-      dayPassClicks: eventCount(row, "DAY_PASS_CLICKED"), uniqueDayPassClickers: dayPassClickers.size, confirmedDayPasses, userConfirmedDayPasses: eventCount(row, "DAY_PASS_CLAIM_CONFIRMED"), gymConfirmedDayPasses: eventCount(row, "DAY_PASS_GYM_CONFIRMED"), uniqueDayPassClaimers: new Set(confirmedDayPassEvents.map(actor)).size, dayPassSignups: eventCount(row, "DAY_PASS_SIGNUP"), dayPassClickRate: profileViewers.size ? Number((dayPassClickers.size / profileViewers.size * 100).toFixed(1)) : 0,
-      membershipClicks: eventCount(row, "MEMBERSHIP_CLICKED"), uniqueMembershipClickers: membershipClickers.size, confirmedMemberships, userConfirmedMemberships: eventCount(row, "MEMBERSHIP_CLAIM_CONFIRMED"), gymConfirmedMemberships: eventCount(row, "MEMBERSHIP_GYM_CONFIRMED"), uniqueMembershipClaimers: new Set(confirmedMembershipEvents.map(actor)).size, membershipSignups: eventCount(row, "MEMBERSHIP_SIGNUP"), membershipClickRate: profileViewers.size ? Number((membershipClickers.size / profileViewers.size * 100).toFixed(1)) : 0, filterUses: eventCount(row, "FILTER_CHANGED"), locationSearches: eventCount(row, "LOCATION_SEARCHED") + eventCount(row, "LOCATION_USED"),
-      ...Object.fromEntries(eventTypes.map(type => [`raw:${type}`, eventCount(row, type)])),
-    });
-  }
-  formatSheet(daily);
-
-  const rawEvents = workbook.addWorksheet("Raw events");
-  rawEvents.columns = ["Event ID", "Date", "Timestamp", "Event type", "User email", "User ID", "Visitor ID", "Visit ID", "Gym", "Gym ID", "Path", "Duration ms", "Metadata"].map(header => ({ header, key: header }));
-  for (const event of events) rawEvents.addRow({
-    "Event ID": event.id, Date: day(event.createdAt), Timestamp: event.createdAt.toISOString(), "Event type": event.eventType, "User email": event.user?.email ?? "", "User ID": event.userId ?? "", "Visitor ID": event.visitorId, "Visit ID": event.visitId, Gym: event.gym?.name ?? "", "Gym ID": event.gymId ?? "", Path: event.path, "Duration ms": event.durationMs ?? "", Metadata: event.metadata == null ? "" : JSON.stringify(event.metadata),
-  });
-  formatSheet(rawEvents);
-
   const visitorUsers = new Map(events.filter(event => event.userId).map(event => [event.visitorId, event.userId!]));
   const userFor = (event: ExportEvent) => event.userId || visitorUsers.get(event.visitorId);
   const userReports = (userId: string, prefix: "DAY_PASS" | "MEMBERSHIP", confirmed: Set<string>) => new Set(events.filter(event => event.eventType === `${prefix}_CLAIM_CONFIRMED` && userFor(event) === userId).map(event => {
@@ -148,33 +97,25 @@ export async function buildAdminMetricsWorkbook() {
   const behaviorActor = (event: ExportEvent) => event.user?.email?.toLowerCase() || visitorEmails.get(event.visitorId) || `visitor:${event.visitorId}`;
   const gymEventTypes = ["GYM_OPENED", "FAVORITE_ADDED", "COMPARE_ADDED", "DIRECTIONS_CLICKED", "WEBSITE_CLICKED", "DAY_PASS_CLICKED", "DAY_PASS_CLAIM_CONFIRMED", "DAY_PASS_GYM_CONFIRMED", "DAY_PASS_SIGNUP", "MEMBERSHIP_CLICKED", "MEMBERSHIP_CLAIM_CONFIRMED", "MEMBERSHIP_GYM_CONFIRMED", "MEMBERSHIP_SIGNUP"];
   const gymSheet = workbook.addWorksheet("Gym demand funnel");
-  gymSheet.columns = [{ header: "Gym", key: "Gym" }, { header: "Report email", key: "Report email" }, { header: "Gym ID", key: "Gym ID" }, { header: "Customers supplied", key: "Customers supplied" }, { header: "MRR", key: "MRR" }, { header: "Confirmed day passes", key: "Confirmed day passes" }, { header: "Confirmed memberships", key: "Confirmed memberships" }, ...gymEventTypes.map(type => ({ header: type, key: type }))];
+  gymSheet.columns = [{ header: "Gym", key: "Gym" }, { header: "Report email", key: "Report email" }, { header: "Gym ID", key: "Gym ID" }, { header: "Customers supplied", key: "Customers supplied" }, { header: "MRR", key: "MRR" }, { header: "Confirmed day passes", key: "Confirmed day passes" }, { header: "Confirmed memberships", key: "Confirmed memberships" }, ...gymEventTypes.map(type => ({ header: type, key: type })), { header: "Day-pass rate", key: "Day-pass rate" }, { header: "Membership rate", key: "Membership rate" }];
   for (const gym of gyms) { const gymEvents = events.filter(event => event.gymId === gym.id),customersSupplied=new Set(financialRecords.filter(record=>record.event.gymId===gym.id).map(record=>record.email.trim().toLowerCase()).filter(Boolean)).size; gymSheet.addRow({ Gym: gym.name, "Report email": gym.access[0]?.user.email || gym.contactEmail || "", "Gym ID": gym.id, "Customers supplied":customersSupplied, MRR:mrrByGym.get(gym.id)??0, "Confirmed day passes": [...resolvedDayPasses.values()].filter(event=>event.gymId===gym.id).length, "Confirmed memberships": [...resolvedMemberships.values()].filter(event=>event.gymId===gym.id).length, ...Object.fromEntries(gymEventTypes.map(type => [type, new Set(gymEvents.filter(event => event.eventType === type).map(behaviorActor)).size])) }); }
+  gymSheet.eachRow((row, index) => {
+    if (index === 1) return;
+    const opens = Number(row.getCell("GYM_OPENED").value) || 0;
+    row.getCell("Day-pass rate").value = opens ? Math.round(Number(row.getCell("DAY_PASS_CLICKED").value) / opens * 100) : 0;
+    row.getCell("Membership rate").value = opens ? Math.round(Number(row.getCell("MEMBERSHIP_CLICKED").value) / opens * 100) : 0;
+  });
   formatSheet(gymSheet);
 
-  const dailyGymSheet = workbook.addWorksheet("Daily gym demand");
-  dailyGymSheet.columns = [{ header: "Date", key: "Date" }, { header: "Gym", key: "Gym" }, { header: "Gym ID", key: "Gym ID" }, { header: "Confirmed day passes", key: "Confirmed day passes" }, { header: "Confirmed memberships", key: "Confirmed memberships" }, ...gymEventTypes.flatMap(type => [{ header: `${type} events`, key: `${type}:events` }, { header: `${type} unique users`, key: `${type}:users` }])];
-  const retainedDates = [...dailyMap.keys()].sort();
-  for (const date of retainedDates) for (const gym of gyms) {
-    const gymEvents = dailyMap.get(date)!.sourceEvents.filter(event => event.gymId === gym.id);
-    dailyGymSheet.addRow({ Date: date, Gym: gym.name, "Gym ID": gym.id, "Confirmed day passes": [...resolvedDayPasses.values()].filter(event=>event.gymId===gym.id&&day(event.createdAt)===date).length, "Confirmed memberships": [...resolvedMemberships.values()].filter(event=>event.gymId===gym.id&&day(event.createdAt)===date).length, ...Object.fromEntries(gymEventTypes.flatMap(type => [[`${type}:events`, gymEvents.filter(event => event.eventType === type).length], [`${type}:users`, new Set(gymEvents.filter(event => event.eventType === type).map(behaviorActor)).size]])) });
-  }
-  formatSheet(dailyGymSheet);
-
   const claimSheet = workbook.addWorksheet("Claim activity log");
-  claimSheet.columns = ["Type", "Email", "Gym", "Offer", "Clicked at", "Gym response", "Confirmed by user", "Confirmed by gym", "Claim status", "Confirmation timestamp", "User confirmed at", "Gym confirmed at", "Gym ID", "Claim ID"].map(header => ({ header, key: header }));
-  for (const click of events.filter(event => ["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED"].includes(event.eventType))) { const prefix = click.eventType === "DAY_PASS_CLICKED" ? "DAY_PASS" : "MEMBERSHIP",nextClick=events.find(event=>event.eventType===click.eventType&&event.gymId===click.gymId&&actor(event)===actor(click)&&event.createdAt>click.createdAt),userConfirmation=events.find(event=>event.eventType===`${prefix}_CLAIM_CONFIRMED`&&event.gymId===click.gymId&&actor(event)===actor(click)&&event.createdAt>=click.createdAt&&(!nextClick||event.createdAt<nextClick.createdAt)),gymConfirmation=events.find(event=>event.eventType===`${prefix}_GYM_CONFIRMED`&&event.visitId===`gym-confirm:${click.id}`),gymDeclined=events.some(event=>event.eventType===`${prefix}_GYM_DECLINED`&&event.visitId===`gym-confirm:${click.id}`),cycleResponse=prefix==="MEMBERSHIP"?[...events].reverse().find(event=>["MEMBERSHIP_CYCLE_GYM_CONFIRMED","MEMBERSHIP_GYM_ENDED"].includes(event.eventType)&&((event.metadata as Record<string,unknown>|null)?.claimClickId===click.id)):null,latestGymResponse=cycleResponse??gymConfirmation,claimState=gymConfirmation?"Confirmed":gymDeclined?"Unconfirmed":userConfirmation?"User reported":"Unconfirmed",metadata=click.metadata as Record<string,unknown>|null,offerName=prefix==="MEMBERSHIP"&&typeof metadata?.optionName==="string"&&metadata.optionName.trim()?metadata.optionName.trim():prefix==="DAY_PASS"&&typeof metadata?.durationDays==="number"?`${metadata.durationDays}-day pass`:prefix==="MEMBERSHIP"?"Membership":"Day pass",offerPrice=typeof metadata?.price==="number"?` · $${metadata.price.toFixed(2)}`:"",gymResponse=cycleResponse?.eventType==="MEMBERSHIP_CYCLE_GYM_CONFIRMED"?"Active":cycleResponse?.eventType==="MEMBERSHIP_GYM_ENDED"?"Inactive":gymConfirmation?"Purchased":gymDeclined?"Not Purchased":""; claimSheet.addRow({ Type: prefix === "DAY_PASS" ? "Day pass" : "Membership", Email: click.user?.email ?? "", Gym: click.gym?.name ?? "Deleted gym", Offer:`${offerName}${offerPrice}`, "Clicked at": click.createdAt.toISOString(), "Gym response":gymResponse, "Confirmed by user": userConfirmation ? "Yes" : "No", "Confirmed by gym": latestGymResponse ? "Yes" : "No", "Claim status":claimState, "Confirmation timestamp": latestGymResponse?.createdAt.toISOString() ?? userConfirmation?.createdAt.toISOString() ?? "", "User confirmed at": userConfirmation?.createdAt.toISOString() ?? "", "Gym confirmed at": latestGymResponse?.createdAt.toISOString() ?? "", "Gym ID": click.gymId ?? "", "Claim ID": click.id }); }
+  claimSheet.columns = ["Type", "Email", "Gym", "Offer", "Clicked at", "Gym response", "Confirmed by user", "Confirmed by gym", "Claim status", "Confirmation timestamp", "User confirmed at", "Gym confirmed at", "Gym ID", "Claim ID", "User response"].map(header => ({ header, key: header }));
+  for (const click of events.filter(event => ["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED"].includes(event.eventType))) { const prefix = click.eventType === "DAY_PASS_CLICKED" ? "DAY_PASS" : "MEMBERSHIP",nextClick=events.find(event=>event.eventType===click.eventType&&event.gymId===click.gymId&&behaviorActor(event)===behaviorActor(click)&&event.createdAt>click.createdAt),userOutcome=[...events].reverse().find(event=>[`${prefix}_CLAIM_CONFIRMED`,`${prefix}_CLAIM_DECLINED`].includes(event.eventType)&&event.gymId===click.gymId&&behaviorActor(event)===behaviorActor(click)&&event.createdAt>=click.createdAt&&(!nextClick||event.createdAt<nextClick.createdAt)),userConfirmation=userOutcome?.eventType===`${prefix}_CLAIM_CONFIRMED`?userOutcome:null,gymConfirmation=events.find(event=>event.eventType===`${prefix}_GYM_CONFIRMED`&&event.visitId===`gym-confirm:${click.id}`),gymDeclined=events.some(event=>event.eventType===`${prefix}_GYM_DECLINED`&&event.visitId===`gym-confirm:${click.id}`),cycleResponse=prefix==="MEMBERSHIP"?[...events].reverse().find(event=>["MEMBERSHIP_CYCLE_GYM_CONFIRMED","MEMBERSHIP_GYM_ENDED"].includes(event.eventType)&&((event.metadata as Record<string,unknown>|null)?.claimClickId===click.id)):null,latestGymResponse=cycleResponse??gymConfirmation,claimState=gymConfirmation?"Confirmed":gymDeclined?"Unconfirmed":userConfirmation?"User reported":"Unconfirmed",metadata=click.metadata as Record<string,unknown>|null,offerName=prefix==="MEMBERSHIP"&&typeof metadata?.optionName==="string"&&metadata.optionName.trim()?metadata.optionName.trim():prefix==="DAY_PASS"&&typeof metadata?.durationDays==="number"?`${metadata.durationDays}-day pass`:prefix==="MEMBERSHIP"?"Membership":"Day pass",offerPrice=typeof metadata?.price==="number"?` · $${metadata.price.toFixed(2)}`:"",gymResponse=cycleResponse?.eventType==="MEMBERSHIP_CYCLE_GYM_CONFIRMED"?"Active":cycleResponse?.eventType==="MEMBERSHIP_GYM_ENDED"?"Inactive":gymConfirmation?"Purchased":gymDeclined?"Not Purchased":""; claimSheet.addRow({ Type: prefix === "DAY_PASS" ? "Day pass" : "Membership", Email: click.user?.email ?? visitorEmails.get(click.visitorId) ?? "", Gym: click.gym?.name ?? "Deleted gym", Offer:`${offerName}${offerPrice}`, "Clicked at": click.createdAt.toISOString(), "Gym response":gymResponse, "Confirmed by user": userConfirmation ? "Yes" : "No", "Confirmed by gym": latestGymResponse ? "Yes" : "No", "Claim status":claimState, "Confirmation timestamp": latestGymResponse?.createdAt.toISOString() ?? userConfirmation?.createdAt.toISOString() ?? "", "User confirmed at": userConfirmation?.createdAt.toISOString() ?? "", "Gym confirmed at": latestGymResponse?.createdAt.toISOString() ?? "", "Gym ID": click.gymId ?? "", "Claim ID": click.id, "User response": userOutcome?.eventType===`${prefix}_CLAIM_CONFIRMED`?"Confirmed":userOutcome?.eventType===`${prefix}_CLAIM_DECLINED`?"Declined":"Unsure" }); }
   formatSheet(claimSheet);
   for (const [type, label] of [["Day pass", "User-reported day passes"], ["Membership", "User-reported memberships"]]) {
     let reported = 0;
     claimSheet.eachRow((row, index) => { if (index > 1 && row.getCell("Type").value === type && row.getCell("Claim status").value === "User reported") reported++; });
     summary.addRow({ metric: label, value: reported });
   }
-
-  const financialSheet = workbook.addWorksheet("Financial ledger");
-  financialSheet.columns = ["Confirmed at", "Gym", "User", "Type", "Offer", "Billing period start", "Billing period end", "Attributed revenue", "Source event ID"].map(header => ({ header, key: header }));
-  for (const record of financialRecords) financialSheet.addRow({ "Confirmed at":record.event.createdAt.toISOString(), Gym:record.event.gym?.name??"Deleted gym", User:record.email, Type:record.type, Offer:record.offer, "Billing period start":record.periodStart, "Billing period end":record.periodEnd, "Attributed revenue":record.amount, "Source event ID":record.event.id });
-  formatSheet(financialSheet);
 
   const opportunitySheet=workbook.addWorksheet("Unclaimed gym opportunity");
   opportunitySheet.columns=["Gym","User-reported purchases","Day-pass purchases","Membership purchases","Potential customers","Estimated day-pass revenue","Estimated membership revenue","Estimated attributed revenue"].map(header=>({header,key:header}));
@@ -185,31 +126,15 @@ export async function buildAdminMetricsWorkbook() {
   filterSheet.columns = [{ header: "Filter category", key: "category" }, { header: "Unique users", key: "users" }];
   const categories = ["Distance", "Day-pass price", "Membership price", "Gym type", "Equipment", "Amenities"];
   const matchesFilterCategory = (event: ExportEvent, category: string) => event.eventType === "FILTER_CHANGED" && filterCategory(event.metadata) === category;
-  for (const category of categories) { const actors = new Set(events.filter(event => matchesFilterCategory(event, category)).map(actor)); filterSheet.addRow({ category, users: actors.size }); }
+  for (const category of categories) { const actors = new Set(events.filter(event => matchesFilterCategory(event, category)).map(behaviorActor)); filterSheet.addRow({ category, users: actors.size }); }
   formatSheet(filterSheet);
-
-  const dailyFilters = workbook.addWorksheet("Daily filter usage");
-  dailyFilters.columns = [{ header: "Date", key: "date" }, { header: "Filter category", key: "category" }, { header: "Uses", key: "uses" }, { header: "Unique users", key: "users" }];
-  for (const date of retainedDates) for (const category of categories) { const matching = dailyMap.get(date)!.sourceEvents.filter(event => matchesFilterCategory(event, category)); dailyFilters.addRow({ date, category, uses: matching.length, users: new Set(matching.map(actor)).size }); }
-  formatSheet(dailyFilters);
 
   const citySheet = workbook.addWorksheet("Popular cities");
   citySheet.columns = [{ header: "City", key: "city" }, { header: "State", key: "state" }, { header: "Country", key: "country" }, { header: "Unique users", key: "users" }];
   const cities = new Map<string, { city: string; state: string; country: string; users: Set<string> }>();
-  for (const event of events.filter(event => ["LOCATION_SEARCHED", "LOCATION_USED"].includes(event.eventType))) { const data = event.metadata as Record<string, unknown> | null; const city = typeof data?.city === "string" ? data.city.trim() : ""; if (!city) continue; const state = typeof data?.state === "string" ? data.state.trim() : ""; const country = typeof data?.country === "string" ? data.country.trim() : ""; const key = `${city.toLowerCase()}|${state.toLowerCase()}|${country.toLowerCase()}`; const row = cities.get(key) ?? { city, state, country, users: new Set() }; row.users.add(actor(event)); cities.set(key, row); }
+  for (const event of events.filter(event => ["LOCATION_SEARCHED", "LOCATION_USED"].includes(event.eventType))) { const data = event.metadata as Record<string, unknown> | null; const city = typeof data?.city === "string" ? data.city.trim() : ""; if (!city) continue; const state = typeof data?.state === "string" ? data.state.trim() : ""; const country = typeof data?.country === "string" ? data.country.trim() : ""; const key = `${city.toLowerCase()}|${state.toLowerCase()}|${country.toLowerCase()}`; const row = cities.get(key) ?? { city, state, country, users: new Set() }; row.users.add(behaviorActor(event)); cities.set(key, row); }
   for (const row of [...cities.values()].sort((a, b) => b.users.size - a.users.size)) citySheet.addRow({ city: row.city, state: row.state, country: row.country, users: row.users.size });
   formatSheet(citySheet);
-
-  const dailyCities = workbook.addWorksheet("Daily city activity");
-  dailyCities.columns = [{ header: "Date", key: "date" }, { header: "City", key: "city" }, { header: "State", key: "state" }, { header: "Country", key: "country" }, { header: "Searches / location uses", key: "uses" }, { header: "Unique users", key: "users" }];
-  const dailyCityRows = new Map<string, { date: string; city: string; state: string; country: string; uses: number; users: Set<string> }>();
-  for (const event of events.filter(event => ["LOCATION_SEARCHED", "LOCATION_USED"].includes(event.eventType))) {
-    const data = event.metadata as Record<string, unknown> | null, city = typeof data?.city === "string" ? data.city.trim() : ""; if (!city) continue;
-    const date = day(event.createdAt), state = typeof data?.state === "string" ? data.state.trim() : "", country = typeof data?.country === "string" ? data.country.trim() : "", key = `${date}|${city.toLowerCase()}|${state.toLowerCase()}|${country.toLowerCase()}`;
-    const row = dailyCityRows.get(key) ?? { date, city, state, country, uses: 0, users: new Set<string>() }; row.uses++; row.users.add(actor(event)); dailyCityRows.set(key, row);
-  }
-  for (const row of [...dailyCityRows.values()].sort((a, b) => a.date.localeCompare(b.date) || b.users.size - a.users.size)) dailyCities.addRow({ date: row.date, city: row.city, state: row.state, country: row.country, uses: row.uses, users: row.users.size });
-  formatSheet(dailyCities);
 
   const claims = workbook.addWorksheet("Gym claim log");
   claims.columns = ["Gym", "Claimed", "Claimed by", "Claimed at", "Assigned by", "Last updated"].map(header => ({ header, key: header }));
@@ -240,6 +165,7 @@ export async function buildAdminMetricsWorkbook() {
   ]);
 
   // Supply the actual cumulative chart series (daily distinct counts cannot be summed).
+  const retainedDates = [...dailyMap.keys()].sort();
   const growth = addTable("User and demand growth", ["Date", "Users", "Unique visitors", "Gym profiles opened", "Unique day-pass clickers", "Confirmed day passes", "Unique membership clickers", "Confirmed memberships"]);
   const trendVisitors = new Set<string>(), trendDay = new Set<string>(), trendMember = new Set<string>(), trendDayConfirmed = new Set<string>(), trendMemberConfirmed = new Set<string>();
   let opens = 0;
@@ -325,41 +251,36 @@ export async function buildAdminMetricsWorkbook() {
     }
   }
 
-  // One row per gym assignment makes exact gym filtering possible for multi-gym users.
-  const userGyms = addTable("User gym access", ["Gym", "User email", "Account status", "Gym ID"]);
-  for (const user of users) for (const access of user.gymAccesses) userGyms.addRow([access.gym.name, user.email ?? "", user.deletedAt ? "Deleted" : "Active", access.gym.id]);
-  const signupSheet = addTable("Signup activity", ["Gym", "User email", "Type", "Clicked at", "Signed up at", "Gym ID"]);
-  for (const event of events.filter(event => ["DAY_PASS_SIGNUP", "MEMBERSHIP_SIGNUP"].includes(event.eventType))) {
-    const data = event.metadata as Record<string, unknown> | null;
-    signupSheet.addRow([event.gym?.name ?? "Deleted gym", event.user?.email ?? data?.email ?? "Unknown user", event.eventType === "DAY_PASS_SIGNUP" ? "Day pass" : "Membership", data?.clickedAt ?? event.createdAt.toISOString(), event.createdAt.toISOString(), event.gymId ?? ""]);
-  }
-
   // Plain-English event labels retain the distinctions between actions and people.
   const eventLabel = (value: string) => value.toLowerCase().replaceAll("_", " ").replace(/^gym opened$/, "Gym profile opens").replace(/gym confirmed/g, "confirmed by gym").replace(/claim confirmed/g, "reported by user").replace(/^./, char => char.toUpperCase());
-  for (const sheet of [gymSheet, dailyGymSheet]) sheet.getRow(1).eachCell(cell => {
+  for (const sheet of [gymSheet]) sheet.getRow(1).eachCell(cell => {
     const title = String(cell.value);
     const type = gymEventTypes.find(type => title.startsWith(type));
     if (type) cell.value = `${eventLabel(type)} (${title.endsWith(" events") ? "actions" : "unique people"})`;
   });
-  // Technical daily event columns remain available in the hidden Raw events tab.
-  const firstRaw = daily.columns.findIndex(column => String(column.header).startsWith("Raw event:"));
-  if (firstRaw >= 0) daily.spliceColumns(firstRaw + 1, daily.columnCount - firstRaw);
   // Keep gym names at the left of the tables where people look up gyms.
-  for (const sheet of [claimSheet, financialSheet, dailyGymSheet]) {
+  for (const sheet of [claimSheet]) {
     const gymColumn = sheet.columns.findIndex(column => column.header === "Gym") + 1;
     if (gymColumn > 1) {
       const values = Array.from({ length: sheet.rowCount }, (_, index) => sheet.getRow(index + 1).getCell(gymColumn).value);
       sheet.spliceColumns(gymColumn, 1); sheet.spliceColumns(1, 0, values);
     }
   }
-  const tabOrder = ["Overview", "Users", "User gym access", "Gym claim log", "Landing-page demand", "User and demand growth", "Gym demand funnel", "Claim activity log", "Signup activity", "Popular cities", "Filter usage", "Financial Metrics", "Financial growth", "Revenue by gym", "Unclaimed gym opportunity", "User spending", "Revenue by offer", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"];
-  const hiddenTabs = new Set(["Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"]);
+  const tabOrder = ["Overview", "Users", "Gym claim log", "Landing-page demand", "User and demand growth", "Gym demand funnel", "Claim activity log", "Popular cities", "Filter usage", "Financial Metrics", "Financial growth", "Revenue by gym", "Unclaimed gym opportunity", "User spending", "Revenue by offer"];
   const ordered = new ExcelJS.Workbook();
   ordered.creator = workbook.creator; ordered.created = workbook.created; ordered.modified = workbook.modified;
   for (const name of tabOrder) {
     const source = workbook.getWorksheet(name)!;
+    source.eachRow((row, index) => {
+      if (index === 1) return;
+      row.eachCell(cell => {
+        if (typeof cell.value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z$/.test(cell.value)) return;
+        if (name === "Overview") cell.value = easternTimestampText(cell.value);
+        else { cell.value = easternTimestampSerial(cell.value); cell.numFmt = EASTERN_TIMESTAMP_FORMAT; }
+      });
+    });
     formatSheet(source);
-    source.state = hiddenTabs.has(name) ? "hidden" : "visible";
+    source.state = "visible";
     if (["Overview", "Financial Metrics"].includes(name)) source.eachRow((row, index) => {
       if (index > 1 && typeof row.getCell(2).value === "number" && /revenue|MRR/i.test(row.getCell(1).text) && !/Revenue-generating gyms/.test(row.getCell(1).text)) row.getCell(2).numFmt = '"$"#,##0.00';
     });
@@ -372,6 +293,7 @@ export async function buildAdminMetricsWorkbook() {
       const header = String(source.getRow(1).getCell(column.number!).value);
       if (/revenue|spending|spent|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) column.numFmt = '"$"#,##0.00';
       if (/rate/i.test(header)) column.numFmt = '0.0"%"';
+      column.eachCell?.({ includeEmpty: false }, cell => { if (cell.numFmt === EASTERN_TIMESTAMP_FORMAT) column.width = 32; });
     });
     // ID fields are available for audits without distracting from readable names.
     source.columns.forEach(column => { if (/ ID$/.test(String(source.getRow(1).getCell(column.number!).value))) column.hidden = true; });

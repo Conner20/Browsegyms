@@ -69,51 +69,49 @@ by Git and must be stored securely with the database backup until the rollback w
 
 ### Metrics workbook layout
 
-The Google Sheet and Excel export use the same section-based layout: Overview,
-Users, Gym claim log, Landing-page demand, Financial Metrics, and separate tabs
-for the tables and growth series within those sections. Overview is the first tab.
-Gym fields lead the relevant detail tables; User gym access has one row per
-assignment so multi-gym accounts can be filtered by an exact gym name. Daily
-supporting reports, raw events, and audit notes are retained in hidden tabs.
+The workbook mirrors the admin overview with these 15 tabs, in page order:
+Overview, Users, Gym claim log, Landing-page demand, User and demand growth,
+Gym demand funnel, Claim activity log, Popular cities, Filter usage,
+Financial Metrics, Financial growth, Revenue by gym, Unclaimed gym opportunity,
+User spending, and Revenue by offer. Users retains gym permissions; the funnel
+includes the overview's day-pass and membership click rates.
 
-Each sync preserves the IDs of renamed managed tabs, orders the managed tabs,
-freezes headers and the first column, applies filters and alternating rows, and
-formats Google Sheets dates as native dates and money as USD. Existing custom
-tabs are left alone. Managed data and formatting are regenerated on refresh;
-keep handwritten notes in a separate custom tab. Summaries cover all retained
-history and growth series are cumulative UTC end-of-day snapshots, not additive
-daily counts. Raw records cannot restore activity removed by a metrics reset.
+The sync removes only these retired managed tabs, after replacement reports and
+charts succeed: User gym access, Signup activity, Financial ledger, Daily metrics,
+Daily gym demand, Daily filter usage, Daily city activity, Raw events, Audit notes,
+Start here, and the old Fitting In Metrics combined tab. Custom tabs are preserved.
+Removed tabs are no longer generated in the Excel export or Google Sheet. Source
+records remain in PostgreSQL; clearing metrics in the app still removes event
+history and is reflected in the next successful sheet sync.
+
+Event timestamps (clicks, confirmations, gym claims, user activity, etc.) are
+converted from their recorded UTC instants to America/New_York wall-clock values
+before writing native sortable date-time cells. Displays include seconds, AM/PM,
+and ET. EST applies in winter; EDT applies during daylight saving time. The Sheet
+also uses America/New_York as its timezone. Changing only the Sheet timezone
+would not fix numeric date serials. Export time is labeled with EST or EDT.
+Calendar-only dates and both existing growth reports retain their UTC daily
+boundaries, matching the admin overview charts; event display conversion does
+not shift a billing date or rewrite the growth calculations.
+
+Each sync preserves renamed tab IDs, orders tabs, freezes headings, and applies
+filters and alternating rows. Keep handwritten notes in a separate custom tab;
+managed content is regenerated. Revenue and estimates remain distinct.
+
+Both growth pages retain their native charts and dropdowns. Financial growth
+uses B1 to select a gym (default All gyms), and both pages use E1 to select a
+metric (default All metrics). Valid selections and chart IDs survive refreshes.
+The financial table under the graph shows only the selected gym's data and
+compacts to Date plus the selected metric. Full financial source data remains in
+hidden columns AD:AK, not an extra tab. This table is formula-driven and ordered
+by date; use the dropdowns instead of sorting its spill cells. Revenue and MRR
+use the chart's dollar axis; customers use a separate count axis. The selected
+table uses neutral number formatting and a USD note. Unselected chart series
+are blank, not #N/A or zero. Dropdown interaction requires edit access. Charts
+are created by the Google sync; the Excel export contains the report tables.
 
 Run `node scripts/test-metrics-workbook.cjs` for isolated workbook and Google
-request tests (no database or Google access required). To apply changes to the
-live Sheet, deploy the updated sync code and run the existing authenticated
-`/api/cron/google-sheets` route, or wait for its scheduled run. Google service
-account configuration is required in that environment.
-
-The Google Sheets growth tabs include native line charts. Financial growth has a
-**Choose gym** dropdown at B1, initially **All gyms**; its chart
-updates immediately via a formula using the selected gym ID. The sync preserves
-valid selections and falls back to All gyms when a gym is removed. Revenue and
-MRR use the dollar axis; customers use a separate count axis. User and demand
-growth charts all seven cumulative series. Chart IDs are reused on refresh, and
-unrelated user-created charts remain unchanged. Dropdown interaction requires
-edit access to the sheet. Charts are added by the Google sync, not the XLSX export.
-The retired **Fitting In Metrics** and **Start here** tabs are deleted only after
-the replacement reports and charts are successfully written; no other custom
-tabs are removed.
-
-Growth charts appear above their data tables (headers on row 28). Financial
-growth shows only the selected gym (or the combined All gyms totals), in date
-order. Selecting one metric narrows that table to Date and that metric. The full
-financial source remains in hidden columns AD:AK. The selected table is a live
-formula result, so use the dropdowns rather than manually sorting its cells.
-
-Both growth charts have a **Choose metric** dropdown at E1, defaulting to
-**All metrics**. Pick one metric to isolate its line; choose All metrics to restore
-all lines. On Financial growth this works together with the gym selection at B1.
-Valid gym and metric choices survive scheduled refreshes. Metrics are masked in
-hidden chart-only ranges, preserving the complete source data and the separate
-dollar/customer axes. Suppressed series use blank values instead of #N/A; chart
-data labels are disabled. The selected financial table uses neutral numeric
-formatting with a USD note, so a customer count is never formatted as dollars. Blank dates and inactive series are not plotted as
-zero. Chart controls require Google Sheets edit access.
+request tests, including report coverage, Eastern time and DST conversion,
+chart preservation, and safe retirement of old tabs. No external services are
+used by these tests. To apply changes, deploy the sync code and run the existing
+authenticated `/api/cron/google-sheets` route or wait for its scheduled run.

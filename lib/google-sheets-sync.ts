@@ -1,3 +1,4 @@
+import { EASTERN_TIMESTAMP_FORMAT, METRICS_TIME_ZONE, easternTimestampSerial } from "@/lib/metrics-reporting-time";
 import { growthChartRequests, FINANCIAL_SELECTION_RANGE, GROWTH_METRIC_SELECTION_RANGES } from "@/lib/google-sheets-growth-charts";
 import { createSign } from "node:crypto";
 import type ExcelJS from "exceljs";
@@ -76,7 +77,7 @@ function worksheetValues(workbook: ExcelJS.Workbook): SheetValues[] {
     const values: (string | number | boolean)[][] = [];
     const headers = Array.from({ length: columns }, (_, index) => sheet.getRow(1).getCell(index + 1).text);
     const formats = headers.map(header => {
-      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed at|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : 'mmm d, yyyy hh:mm' };
+      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed at|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : EASTERN_TIMESTAMP_FORMAT };
       if (/revenue|spending|spent|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) return { type: "CURRENCY", pattern: '"$"#,##0.00' };
       if (/rate/i.test(header)) return { type: "NUMBER", pattern: '0.0"%"' };
       return null;
@@ -86,13 +87,13 @@ function worksheetValues(workbook: ExcelJS.Workbook): SheetValues[] {
         const value = cellValue(row.getCell(index + 1));
         if (row.number > 1 && formats[index]?.type.startsWith("DATE") && typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
           const timestamp = Date.parse(value);
-          if (Number.isFinite(timestamp)) return timestamp / 86_400_000 + 25569;
+          if (Number.isFinite(timestamp)) return formats[index]?.type === "DATE_TIME" ? easternTimestampSerial(value) : timestamp / 86_400_000 + 25569;
         }
         return value;
       }));
     });
     if (!values.length) values.push([""]);
-    return { startRow: ["Financial growth", "User and demand growth"].includes(sheet.name) ? 27 : 0, title: sheet.name, values, rows: values.length, columns, hidden: sheet.state !== "visible", widths: headers.map((_, index) => Math.min(360, Math.max(120, (sheet.getColumn(index + 1).width ?? 20) * 7))), moneyRows: ["Overview", "Financial Metrics"].includes(sheet.name) ? values.flatMap((row, index) => index > 0 && typeof row[1] === "number" && /revenue|MRR/i.test(String(row[0])) && !/Revenue-generating gyms/.test(String(row[0])) ? [index] : []) : [], hiddenColumns: headers.flatMap((_, index) => sheet.getColumn(index + 1).hidden ? [index] : []), formats };
+    return { startRow: ["Financial growth", "User and demand growth"].includes(sheet.name) ? 27 : 0, title: sheet.name, values, rows: values.length, columns, hidden: sheet.state !== "visible", widths: headers.map((_, index) => formats[index]?.type === "DATE_TIME" ? 260 : Math.min(360, Math.max(120, (sheet.getColumn(index + 1).width ?? 20) * 7))), moneyRows: ["Overview", "Financial Metrics"].includes(sheet.name) ? values.flatMap((row, index) => index > 0 && typeof row[1] === "number" && /revenue|MRR/i.test(String(row[0])) && !/Revenue-generating gyms/.test(String(row[0])) ? [index] : []) : [], hiddenColumns: headers.flatMap((_, index) => sheet.getColumn(index + 1).hidden ? [index] : []), formats };
   });
 }
 
@@ -155,7 +156,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   }
 
   const propertiesByTitle = new Map((metadata.sheets ?? []).flatMap(sheet => sheet.properties?.title && sheet.properties.sheetId !== undefined ? [[sheet.properties.title, sheet.properties] as const] : []));
-  const formatRequests = sheets.flatMap((sheet, index) => {
+  const formatRequests = [{ updateSpreadsheetProperties: { properties: { timeZone: METRICS_TIME_ZONE }, fields: "timeZone" } }, ...sheets.flatMap((sheet, index) => {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, 1_000);
@@ -177,7 +178,7 @@ export async function syncAdminMetricsToGoogleSheets() {
       { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + 1, startColumnIndex: 0, endColumnIndex: tableColumns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
       sheet.title === "Financial growth" ? { clearBasicFilter: { sheetId } } : { setBasicFilter: { filter: { range } } },
     ];
-  });
+  })];
 
   for (let index = 0; index < formatRequests.length; index += 100) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: formatRequests.slice(index, index + 100) }) });
@@ -191,8 +192,8 @@ export async function syncAdminMetricsToGoogleSheets() {
   for (let index = 0; index < chartRequests.length; index += 100) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: chartRequests.slice(index, index + 100) }) });
   }
-  // Retire only the two explicitly removed tabs, after replacement reports succeed.
-  const retired = (metadata.sheets ?? []).filter(sheet => ["Fitting In Metrics", "Start here"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
+  // Retire only the obsolete managed tabs, after replacement reports succeed.
+  const retired = (metadata.sheets ?? []).filter(sheet => ["Fitting In Metrics", "Start here", "User gym access", "Signup activity", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
   if (retired.length) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: retired.map(sheet => ({ deleteSheet: { sheetId: sheet.properties!.sheetId } })) }) });
   }
