@@ -1,7 +1,10 @@
 import { env } from "@/lib/env";
 import { db } from "@/prisma/client";
 
-const SUPER_ADMIN_EMAIL = "conner.morgan14@gmail.com";
+const SUPER_ADMIN_EMAILS = new Set([
+    "conner.morgan14@gmail.com",
+    "carson.morgan101@gmail.com",
+]);
 
 export function isMissingIsAdminColumnError(error: unknown) {
     if (!(error instanceof Error)) return false;
@@ -30,7 +33,7 @@ export function isConfiguredAdminEmail(email: string | null | undefined) {
 
 export function isSuperAdminEmail(email: string | null | undefined) {
     if (!email) return false;
-    return email.toLowerCase() === SUPER_ADMIN_EMAIL;
+    return SUPER_ADMIN_EMAILS.has(email.toLowerCase());
 }
 
 export function getUserAdminStatus(user: { email?: string | null; isAdmin?: boolean | null }) {
