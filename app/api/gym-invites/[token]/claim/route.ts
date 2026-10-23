@@ -1,3 +1,5 @@
+import { getListingVerification } from "@/lib/listing-verification";
+import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
@@ -15,10 +17,7 @@ export async function PATCH(req: Request, { params }: Context) {
     if (!accountEmail) return NextResponse.json({ message: "Sign up or log in before claiming this listing." }, { status: 401 });
 
     const { token } = await params;
-    const invite = await db.gymInvite.findUnique({
-        where: { tokenHash: sha256Hex(token) },
-        select: { id: true, gymId: true, usedAt: true, expiresAt: true, gym: { select: { name: true, _count: { select: { access: true } } } } },
-    });
+    const invite = await getListingVerification(token);
     if (!invite || invite.usedAt || invite.expiresAt <= new Date()) return NextResponse.json({ message: "This invitation is invalid, expired, or has already been used." }, { status: 410 });
     if (invite.gym._count.access) return NextResponse.json({ message: `The listing for ${invite.gym.name} has already been claimed.` }, { status: 409 });
 
@@ -31,8 +30,12 @@ export async function PATCH(req: Request, { params }: Context) {
 
     try {
         await db.$transaction(async tx => {
-            const user = await tx.user.findUnique({ where: { email: accountEmail }, select: { id: true, emailVerified: true, gymAccesses: { select: { gymId: true } } } });
-            if (!user?.emailVerified) throw new Error("VERIFIED_ACCOUNT_REQUIRED");
+            const currentLink = invite.kind === "referral"
+                ? await tx.gymConversionReviewLink.findFirst({ where: { id: invite.id, tokenHash: sha256Hex(token), expiresAt: { gt: new Date() } } })
+                : await tx.gymInvite.findFirst({ where: { id: invite.id, tokenHash: sha256Hex(token), usedAt: null, expiresAt: { gt: new Date() } } });
+            if (!currentLink) throw new Error("LINK_EXPIRED");
+            const user = await tx.user.findUnique({ where: { email: accountEmail }, select: { id: true, emailVerified: true, deletedAt: true, gymAccesses: { select: { gymId: true } } } });
+            if (!user?.emailVerified || user.deletedAt) throw new Error("VERIFIED_ACCOUNT_REQUIRED");
             if (user.gymAccesses.some(access => access.gymId !== invite.gymId)) throw new Error("ACCOUNT_ALREADY_HAS_GYM");
             const otherOwner = await tx.gymAccess.findFirst({ where: { gymId: invite.gymId, userId: { not: user.id } }, select: { id: true } });
             if (otherOwner) throw new Error("GYM_ALREADY_CLAIMED");
@@ -42,19 +45,28 @@ export async function PATCH(req: Request, { params }: Context) {
             await tx.gymAccess.upsert({ where: { gymId_userId: { gymId: invite.gymId, userId: user.id } }, create: { gymId: invite.gymId, userId: user.id }, update: {} });
             await tx.gymClaim.upsert({
                 where: { gymId_claimantId: { gymId: invite.gymId, claimantId: user.id } },
-                create: { gymId: invite.gymId, claimantId: user.id, status: "APPROVED", businessRole: "Gym representative", evidence: "Claimed through an administrator-issued verification link.", reviewedAt: claimedAt },
+                create: { gymId: invite.gymId, claimantId: user.id, status: "APPROVED", businessRole: "Gym representative", evidence: invite.kind === "referral" ? "Claimed through an administrator-issued referral link." : "Claimed through an administrator-issued verification link.", reviewedAt: claimedAt },
                 update: { status: "APPROVED", proposedData: editable, reviewedAt: claimedAt },
             });
-            await tx.gymInvite.update({ where: { id: invite.id }, data: { usedAt: claimedAt, proposedData: editable } });
-        });
+            if (invite.kind === "invite") await tx.gymInvite.update({ where: { id: invite.id }, data: { usedAt: claimedAt, proposedData: editable } });
+        }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
+        if (error instanceof Error && error.message === "LINK_EXPIRED") return NextResponse.json({ message: "This verification link has expired or is no longer available." }, { status: 410 });
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") return NextResponse.json({ message: "The listing changed during verification. Reload the page and try again." }, { status: 409 });
         if (error instanceof Error && error.message === "VERIFIED_ACCOUNT_REQUIRED") return NextResponse.json({ message: "A verified account is required to claim this listing." }, { status: 401 });
         if (error instanceof Error && error.message === "ACCOUNT_ALREADY_HAS_GYM") return NextResponse.json({ message: "This account is already associated with another gym listing." }, { status: 409 });
         if (error instanceof Error && error.message === "GYM_ALREADY_CLAIMED") return NextResponse.json({ message: "This gym listing has already been claimed." }, { status: 409 });
         throw error;
     }
 
-    const response = NextResponse.json({ message: `You claimed and verified ${invite.gym.name}.`, gymId: invite.gymId });
+    const pendingReferral = invite.kind === "referral" ? token : (await cookies()).get("fittingin_pending_referral")?.value;
+    const referral = pendingReferral ? await db.gymConversionReviewLink.findFirst({
+        where: { tokenHash: sha256Hex(pendingReferral), gymId: invite.gymId, expiresAt: { gt: new Date() } }, select: { id: true },
+    }) : null;
+    const response = NextResponse.json({ message: `You claimed and verified ${invite.gym.name}.`, gymId: invite.gymId,
+        ...(referral ? { redirectTo: `/referrals/review/${encodeURIComponent(pendingReferral!)}` } : {}),
+    });
+    if (referral) response.cookies.delete("fittingin_pending_referral");
     response.cookies.delete(PENDING_GYM_INVITE_COOKIE);
     return response;
 }

@@ -3,8 +3,8 @@ import Link from "next/link";
 import AdminGymListingEditor from "@/components/AdminGymListingEditor";
 import StableExploreLink from "@/components/StableExploreLink";
 import { authOptions } from "@/lib/auth";
-import { sha256Hex } from "@/lib/token";
-import { db } from "@/prisma/client";
+import { getListingVerification } from "@/lib/listing-verification";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,18 +14,8 @@ type Props = { params: Promise<{ token: string }> };
 export default async function GymInvitePage({ params }: Props) {
     const { token } = await params;
 
-    const invite = await db.gymInvite.findUnique({
-        where: { tokenHash: sha256Hex(token) },
-        include: {
-            gym: {
-                include: {
-                    _count: {
-                        select: { access: true },
-                    },
-                },
-            },
-        },
-    });
+    const invite = await getListingVerification(token);
+    if (invite?.kind === "referral" && invite.gym._count.access) redirect(`/referrals/review/${encodeURIComponent(token)}`);
 
     if (invite?.gym._count.access) {
         return (

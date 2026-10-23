@@ -34,7 +34,7 @@ const LogInForm = ({ defaultCallbackUrl = "/" }: { defaultCallbackUrl?: string }
     const purchaseGymId = dayPassGymId || membershipGymId;
     const purchaseIntent = membershipGymId ? "membership" : "day-pass";
     const purchaseOptionId = membershipOptionId || dayPassOptionId;
-    const signUpHref = gymInviteToken ? `/sign-up?invite=${encodeURIComponent(decodeURIComponent(gymInviteToken))}` : purchaseGymId ? `/sign-up?gymId=${encodeURIComponent(purchaseGymId)}${membershipGymId ? "&intent=membership" : ""}${purchaseOptionId ? `&optionId=${encodeURIComponent(purchaseOptionId)}` : ""}` : "/sign-up";
+    const signUpHref = gymInviteToken ? `/sign-up?invite=${encodeURIComponent(decodeURIComponent(gymInviteToken))}` : purchaseGymId ? `/sign-up?gymId=${encodeURIComponent(purchaseGymId)}${membershipGymId ? "&intent=membership" : ""}${purchaseOptionId ? `&optionId=${encodeURIComponent(purchaseOptionId)}` : ""}` : /^\/referrals\/review\/[A-Za-z0-9_-]+$/.test(callbackUrl) ? `/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}` : "/sign-up";
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
     const [showResendPrompt, setShowResendPrompt] = useState(false);
     const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent">("idle");

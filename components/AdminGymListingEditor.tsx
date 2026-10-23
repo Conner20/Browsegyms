@@ -165,7 +165,10 @@ export default function AdminGymListingEditor({ gymId, inviteToken, initialGym, 
         const endpoint = inviteToken ? `/api/gym-invites/${encodeURIComponent(inviteToken)}/claim` : ownerMode ? (gymId ? `/api/gyms/${gymId}` : "/api/user/gyms") : gymId ? `/api/admin/gyms/${gymId}` : "/api/admin/gyms";
         const response = await fetch(endpoint, { method: inviteToken || gymId ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const result = await response.json().catch(() => ({}));
-        if (response.ok && inviteToken) setVerificationComplete(true);
+        if (response.ok && inviteToken) {
+            if (typeof result.redirectTo === "string" && /^\/referrals\/review\/[A-Za-z0-9_-]+$/.test(result.redirectTo)) { window.location.assign(result.redirectTo); return; }
+            setVerificationComplete(true);
+        }
         else if (response.ok) { if (verifyingAdminChanges) { setVerificationRequired(false); setVerificationSections([]); } if (!gymId) setMessage(result.message ?? "Gym listing created."); if (gymId) { setVerifiedChangesFeedback(verifyingAdminChanges); setUpdatedFeedback(true); updatedTimer.current = setTimeout(() => { setUpdatedFeedback(false); setVerifiedChangesFeedback(false); updatedTimer.current = null; }, 2000); } if (!gymId && result.gym?.id) router.replace(`/admin/gyms/${result.gym.id}`); }
         else { setUpdatedFeedback(false); setVerifiedChangesFeedback(false); setMessage(result.message ?? "Unable to save gym listing."); window.requestAnimationFrame(()=>window.scrollTo({top:0,behavior:"smooth"})); }
         setSaving(false);

@@ -14,7 +14,8 @@ const page = async ({ searchParams }: { searchParams: Promise<{ callbackUrl?: st
     // A gym claim is an administrator-issued, time-limited workflow. Keep it
     // ahead of unrelated purchase callbacks until the listing is claimed.
     const pendingInvite = await getValidPendingGymInvite(cookieStore.get(PENDING_GYM_INVITE_COOKIE)?.value);
-    const callbackUrl = pendingInvite ? `/gym-invite/${encodeURIComponent(pendingInvite)}` : explicitCallback || "/";
+    const referralCallback = /^\/referrals\/review\/[A-Za-z0-9_-]+$/.test(explicitCallback);
+    const callbackUrl = referralCallback ? explicitCallback : pendingInvite ? `/gym-invite/${encodeURIComponent(pendingInvite)}` : explicitCallback || "/";
     if (session?.user) {
         redirect(callbackUrl);
     }

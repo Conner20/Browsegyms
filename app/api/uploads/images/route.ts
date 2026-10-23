@@ -1,3 +1,4 @@
+import { getListingVerification } from "@/lib/listing-verification";
 // app/api/uploads/images/route.ts
 // Multipart image uploads for DMs.
 // - If AWS env vars are set *and* @aws-sdk/client-s3 is installed, uploads go to S3.
@@ -7,7 +8,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { hasAdminAccessByEmail } from "@/lib/admin";
-import { sha256Hex } from "@/lib/token";
 import { db } from "@/prisma/client";
 
 export const runtime = "nodejs";
@@ -73,8 +73,8 @@ async function saveToS3(file: File) {
 export async function POST(req: Request) {
     const session = await getServerSession(authOptions);
     const inviteToken = new URL(req.url).searchParams.get("invite")?.trim();
-    const invite = inviteToken ? await db.gymInvite.findUnique({ where: { tokenHash: sha256Hex(inviteToken) }, select: { usedAt: true, expiresAt: true } }) : null;
-    const validInvite = Boolean(session?.user?.email && invite && !invite.usedAt && invite.expiresAt > new Date());
+    const invite = inviteToken ? await getListingVerification(inviteToken) : null;
+    const validInvite = Boolean(session?.user?.email && invite && !invite.gym._count.access && !invite.usedAt && invite.expiresAt > new Date());
     const signedInUploader = session?.user?.email
         ? await db.user.findUnique({ where: { email: session.user.email.toLowerCase() }, select: { role: true } })
         : null;

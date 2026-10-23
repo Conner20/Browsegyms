@@ -1,3 +1,6 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { getReferralReviewAccess } from "@/lib/referral-review-access";
 import { NextResponse } from "next/server";
 import { getConversionReview, type ConversionReviewStatus } from "@/lib/conversion-review";
 import { membershipChargeForPeriod, membershipTermsFromMetadata } from "@/lib/membership-attribution";
@@ -8,6 +11,11 @@ const validStatuses = new Set<ConversionReviewStatus>(["purchased", "not_found"]
 
 export async function PATCH(req: Request, { params }: Context) {
   const { token } = await params;
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return NextResponse.json({ message: "Log in as the gym’s assigned owner to confirm referrals." }, { status: 401 });
+  const access = await getReferralReviewAccess(token, session.user.email);
+  if (access.status === "invalid") return NextResponse.json({ message: "This review link is invalid or has expired." }, { status: 404 });
+  if (access.status !== "allowed") return NextResponse.json({ message: "Only the gym’s assigned owner can confirm referrals." }, { status: 403 });
   const review = await getConversionReview(token);
   if (!review) return NextResponse.json({ message: "This review link is invalid or has expired." }, { status: 404 });
   const body = await req.json().catch(() => ({}));
@@ -24,7 +32,12 @@ export async function PATCH(req: Request, { params }: Context) {
   const sourceClickIds = [...new Set(normalized.map(item => allowedRows.get(item.clickId)!.sourceClickId))];
   const clicks = await db.landingEvent.findMany({ where: { id: { in: sourceClickIds }, gymId: review.gymId }, select: { id: true, eventType: true, visitorId: true, userId: true, metadata: true, createdAt: true } });
   const clickById = new Map(clicks.map(click => [click.id, click]));
-  await db.$transaction(async tx => {
+  const saved = await db.$transaction(async tx => {
+    const owner = await tx.gymAccess.findFirst({
+      where: { gymId: review.gymId, user: { email: session.user!.email!.trim().toLowerCase(), emailVerified: { not: null }, deletedAt: null } },
+      select: { id: true },
+    });
+    if (!owner) return false;
     for (const decision of normalized) {
       const row = allowedRows.get(decision.clickId)!;
       const click = clickById.get(row.sourceClickId);
@@ -89,6 +102,8 @@ export async function PATCH(req: Request, { params }: Context) {
         },
       } });
     }
+    return true;
   });
+  if (!saved) return NextResponse.json({ message: "Only the gym’s assigned owner can confirm referrals." }, { status: 403 });
   return NextResponse.json({ ok: true });
 }
