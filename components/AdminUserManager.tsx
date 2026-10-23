@@ -5,8 +5,8 @@ import { RefreshCw, RotateCcw, ShieldPlus, ShieldX, Trash2 } from "lucide-react"
 import { PasswordInput } from "@/components/ui/password-input";
 import UniversalCheckbox from "@/components/UniversalCheckbox";
 
-type User={id:string;email:string|null;role:string|null;deletedAt:string|null;hasAdminAccess:boolean;isConfiguredAdmin:boolean;lastActiveAt:string|null;gymAccessCount:number;gyms:{id:string;name:string}[];dayPassClicks:number;confirmedDayPasses:number;membershipClicks:number;confirmedMemberships:number};
-type SortKey="role"|"deleted"|"dayPassClicks"|"confirmedDayPasses"|"membershipClicks"|"confirmedMemberships"|"lastActiveAt";
+type User={id:string;email:string|null;role:string|null;deletedAt:string|null;hasAdminAccess:boolean;isConfiguredAdmin:boolean;lastActiveAt:string|null;gymAccessCount:number;gyms:{id:string;name:string}[]};
+type SortKey="role"|"deleted"|"lastActiveAt";
 export default function AdminUserManager(){
  const[users,setUsers]=useState<User[]>([]),[query,setQuery]=useState(""),[loading,setLoading]=useState(true),[canManage,setCanManage]=useState(false),[selected,setSelected]=useState<string[]>([]),[password,setPassword]=useState(""),[message,setMessage]=useState(""),[page,setPage]=useState(1),[deleteArmed,setDeleteArmed]=useState(false),[purgeArmed,setPurgeArmed]=useState(false),[sort,setSort]=useState<{key:SortKey;direction:"asc"|"desc"}>({key:"role",direction:"asc"});
  const load=async()=>{setLoading(true);const response=await fetch(`/api/admin/users?q=${encodeURIComponent(query)}`,{cache:"no-store"});const data=await response.json().catch(()=>({}));if(response.ok){setUsers(data.users??[]);setCanManage(Boolean(data.canManageUsers));setSelected([]);setPage(1)}else setMessage(data.error??"Unable to load users.");setLoading(false)};
@@ -20,7 +20,7 @@ export default function AdminUserManager(){
  const recover=async()=>{if(!selected.length||!password)return setMessage("Enter your password and select at least one deleted account.");if(!deleteArmed){setDeleteArmed(true);return}setDeleteArmed(false);const response=await fetch("/api/admin/users",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"recoverUsers",userIds:selected,password})});const data=await response.json().catch(()=>({}));if(!response.ok){setMessage(data.error??"Unable to recover the selected account.");return}const count=Number(data.count)||selected.length;setSelected([]);setPassword("");setMessage(`${count} account${count===1?"":"s"} recovered as ${count===1?"a trainee account":"trainee accounts"}.`);await load()};
  const purge=async()=>{if(!selected.length||!password)return setMessage("Enter your password and select at least one deleted account.");if(!purgeArmed){setPurgeArmed(true);setDeleteArmed(false);return}setPurgeArmed(false);const response=await fetch("/api/admin/users",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"permanentlyDeleteUsers",userIds:selected,password})});const data=await response.json().catch(()=>({}));if(!response.ok){setMessage(data.error??"Unable to permanently delete the selected account.");return}const count=Number(data.count)||selected.length;setSelected([]);setPassword("");setMessage(`${count} deleted account${count===1?" was":"s were"} permanently deleted.`);await load()};
  const remove=async()=>{if(!selected.length||!password)return setMessage("Enter your password and select at least one account.");if(!deleteArmed){setDeleteArmed(true);return}setDeleteArmed(false);for(const targetUserId of selected){const response=await fetch("/api/user/delete",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({password,targetUserId})});const data=await response.json().catch(()=>({}));if(!response.ok){setMessage(data.message??"Unable to delete account.");return}}setSelected([]);setPassword("");setMessage("Selected accounts deleted.");await load()};
- const roleRank=(role:string|null)=>role==="GYM"?0:role==="TRAINEE"?1:2,sortedUsers=[...users].sort((a,b)=>{const raw=sort.key==="role"?roleRank(a.role)-roleRank(b.role):sort.key==="deleted"?Number(Boolean(a.deletedAt))-Number(Boolean(b.deletedAt)):sort.key==="lastActiveAt"?(a.lastActiveAt?Date.parse(a.lastActiveAt):0)-(b.lastActiveAt?Date.parse(b.lastActiveAt):0):a[sort.key]-b[sort.key];return (sort.direction==="asc"?raw:-raw)||(a.email||"").localeCompare(b.email||"")}),pageSize=10,totalPages=Math.max(1,Math.ceil(sortedUsers.length/pageSize)),visibleUsers=sortedUsers.slice((page-1)*pageSize,page*pageSize); const selectedAreAdmins=selected.length>0&&selected.every(id=>users.find(user=>user.id===id)?.hasAdminAccess),selectedAreDeleted=selected.length>0&&selected.every(id=>Boolean(users.find(user=>user.id===id)?.deletedAt));
+ const roleRank=(role:string|null)=>role==="GYM"?0:role==="TRAINEE"?1:2,sortedUsers=[...users].sort((a,b)=>{const raw=sort.key==="role"?roleRank(a.role)-roleRank(b.role):sort.key==="deleted"?Number(Boolean(a.deletedAt))-Number(Boolean(b.deletedAt)):(a.lastActiveAt?Date.parse(a.lastActiveAt):0)-(b.lastActiveAt?Date.parse(b.lastActiveAt):0);return (sort.direction==="asc"?raw:-raw)||(a.email||"").localeCompare(b.email||"")}),pageSize=10,totalPages=Math.max(1,Math.ceil(sortedUsers.length/pageSize)),visibleUsers=sortedUsers.slice((page-1)*pageSize,page*pageSize); const selectedAreAdmins=selected.length>0&&selected.every(id=>users.find(user=>user.id===id)?.hasAdminAccess),selectedAreDeleted=selected.length>0&&selected.every(id=>Boolean(users.find(user=>user.id===id)?.deletedAt));
  const sortBy=(key:SortKey)=>{setPage(1);setSort(current=>current.key===key?{key,direction:current.direction==="asc"?"desc":"asc"}:{key,direction:key==="role"?"asc":"desc"})},sortHeader=(key:SortKey,label:string)=>
 <button type="button" onClick={()=>sortBy(key)} className="inline-flex items-center gap-1 font-bold hover:text-[#22c55e]">{label}<span aria-hidden="true">{sort.key===key?(sort.direction==="asc"?"↑":"↓"):"↕"}</span>
 </button>;
@@ -32,15 +32,13 @@ export default function AdminUserManager(){
 <RefreshCw className={`h-4 w-4 ${loading?"animate-spin":""}`}/>
 </button>
 </div><div className="overflow-x-auto">
-<table className="w-full min-w-[1080px] text-sm">
+<table className="w-full min-w-[680px] text-sm">
 <thead className="border-b border-black/5 text-left text-xs uppercase tracking-wide text-zinc-500 dark:border-white/10 [&_th]:px-4 [&_th]:py-3">
 <tr>
 <th>Select</th>
 <th>Account email</th>
 <th>{sortHeader("deleted","Deleted")}</th>
 <th>{sortHeader("role","Role")}</th>
-<th>{sortHeader("dayPassClicks","Clicks / confirms")}</th>
-<th>{sortHeader("membershipClicks","Membership clicks / confirms")}</th>
 <th>{sortHeader("lastActiveAt","Last active")}</th>
 </tr>
 </thead>
@@ -54,8 +52,6 @@ export default function AdminUserManager(){
 </td>
 <td>{user.deletedAt?<span className="text-xs font-bold uppercase text-zinc-500">Deleted</span>:<span className="text-zinc-400">—</span>}</td>
 <td>{user.role==="GYM"?<span className="group/gym-role relative inline-flex">{user.gyms[0]?<Link href={`/admin/gyms/${user.gyms[0].id}`} onClick={event=>event.stopPropagation()} className="border-b border-dotted border-zinc-400 font-semibold transition hover:text-[#22c55e] focus:text-[#22c55e]">GYM</Link>:<span className="cursor-help border-b border-dotted border-zinc-400 font-semibold" tabIndex={0}>GYM</span>}<span className="pointer-events-none invisible absolute left-1/2 top-full z-30 mt-2 whitespace-nowrap rounded-xl border border-white/10 bg-[#111411] px-3 py-2 text-xs font-semibold normal-case text-white opacity-0 shadow-2xl transition group-hover/gym-role:visible group-hover/gym-role:opacity-100 group-focus-within/gym-role:visible group-focus-within/gym-role:opacity-100">{user.gyms.length?user.gyms.map(gym=>gym.name).join(", "):"No listing assigned"}</span></span>:user.role||"—"}</td>
-<td><span className="font-semibold">{user.dayPassClicks}</span><span className="mx-1.5 text-zinc-400">/</span><span>{user.confirmedDayPasses}</span></td>
-<td><span className="font-semibold">{user.membershipClicks}</span><span className="mx-1.5 text-zinc-400">/</span><span>{user.confirmedMemberships}</span></td>
 <td>{user.lastActiveAt?new Date(user.lastActiveAt).toLocaleString():"No activity"}</td>
 </tr>)}</tbody>
 </table>{!loading&&!users.length&&<p className="p-8 text-center text-zinc-500">No accounts found.</p>}</div>{users.length>pageSize&&<div className="flex items-center justify-center gap-3 border-t border-black/5 px-4 py-3 dark:border-white/10">
