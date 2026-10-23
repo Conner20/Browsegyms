@@ -162,11 +162,11 @@ export async function syncAdminMetricsToGoogleSheets() {
   const formatRequests = [{ updateSpreadsheetProperties: { properties: { timeZone: METRICS_TIME_ZONE }, fields: "timeZone" } }, ...sheets.flatMap((sheet, index) => {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
-    const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, sheet.title === CLAIM_CLICKS_TITLE ? (sheets.find(item => item.title === "Revenue by gym")?.rows ?? 0) + 1 : 0, 1_000);
+    const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, sheet.title === CLAIM_CLICKS_TITLE ? (sheets.find(item => item.title === "Gym financials")?.rows ?? 0) + 1 : 0, 1_000);
     const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === CLAIM_CLICKS_TITLE ? 38 : sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
     const tableRows = sheet.title === "Financial growth" ? new Set(sheet.values.slice(1).map(row => row[1])).size + 1 : sheet.rows;
-    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 13 : sheet.title === "Financial growth" ? 6 : sheet.title === "Overview" ? 2 : sheet.columns;
+    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 13 : sheet.title === "Financial growth" ? 6 : sheet.title === "Overview" ? 4 : sheet.columns;
     const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, tableRows), startColumnIndex: 0, endColumnIndex: tableColumns };
     return [
       { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.title === CLAIM_CLICKS_TITLE ? 5 : sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
@@ -175,7 +175,7 @@ export async function syncAdminMetricsToGoogleSheets() {
       { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: columnCount }, properties: { hiddenByUser: false }, fields: "hiddenByUser" } },
       ...sheet.widths.map((pixelSize, column) => ({ updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: column, endIndex: column + 1 }, properties: { pixelSize, hiddenByUser: sheet.hiddenColumns.includes(column) }, fields: "pixelSize,hiddenByUser" } })),
       ...sheet.formats.flatMap((numberFormat, column) => numberFormat ? [{ repeatCell: { range: { ...range, startRowIndex: sheet.startRow + 1, startColumnIndex: column, endColumnIndex: column + 1 }, cell: { userEnteredFormat: { numberFormat } }, fields: "userEnteredFormat.numberFormat" } }] : []),
-      ...sheet.moneyRows.map(row => ({ repeatCell: { range: { sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 1, endColumnIndex: 2 }, cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '"$"#,##0.00' } } }, fields: "userEnteredFormat.numberFormat" } })),
+      ...sheet.moneyRows.map(row => ({ repeatCell: { range: { sheetId, startRowIndex: row + sheet.startRow, endRowIndex: row + sheet.startRow + 1, startColumnIndex: 1, endColumnIndex: 2 }, cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '"$"#,##0.00' } } }, fields: "userEnteredFormat.numberFormat" } })),
       ...(metadata.sheets?.find(item => item.properties?.sheetId === sheetId)?.bandedRanges ?? []).map(band => ({ deleteBanding: { bandedRangeId: band.bandedRangeId } })),
       { addBanding: { bandedRange: { range, rowProperties: { headerColor: { red: 0.133, green: 0.773, blue: 0.369 }, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: { red: 0.94, green: 0.99, blue: 0.96 } } } } },
       { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + 1, startColumnIndex: 0, endColumnIndex: tableColumns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
@@ -191,12 +191,12 @@ export async function syncAdminMetricsToGoogleSheets() {
   for (let index = 0; index < chunks.length; index += 10) {
     await googleRequest(`${baseUrl}/values:batchUpdate`, token, { method: "POST", body: JSON.stringify({ valueInputOption: "RAW", data: chunks.slice(index, index + 10) }) });
   }
-  const chartRequests = [...growthChartRequests(sheets, metadata.sheets ?? [], previousSelections.gym, previousSelections), ...claimClickRequests(sheets, propertiesByTitle.get(CLAIM_CLICKS_TITLE)!.sheetId!, previousSelections.claimGym), ...overviewPeriodRequests(propertiesByTitle.get("Overview")!.sheetId!, previousSelections.overviewPeriod)];
+  const chartRequests = [...growthChartRequests(sheets, metadata.sheets ?? [], previousSelections.gym, previousSelections), ...claimClickRequests(sheets, propertiesByTitle.get(CLAIM_CLICKS_TITLE)!.sheetId!, previousSelections.claimGym), ...overviewPeriodRequests(propertiesByTitle.get("Overview")!.sheetId!, previousSelections.overviewPeriod, sheets.find(sheet => sheet.title === "Overview")!.rows)];
   for (let index = 0; index < chartRequests.length; index += 100) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: chartRequests.slice(index, index + 100) }) });
   }
   // Retire only the obsolete managed tabs, after replacement reports succeed.
-  const retired = (metadata.sheets ?? []).filter(sheet => ["Claim activity log", "Claim activity", "Fitting In Metrics", "Start here", "User gym access", "Signup activity", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
+  const retired = (metadata.sheets ?? []).filter(sheet => ["Gym demand", "Gym claims", "Gym claim log", "Gym demand funnel", "Revenue by gym", "Unclaimed gym opportunity", "User spending", "Landing-page demand", "Financial Metrics", "Claim activity log", "Claim activity", "Fitting In Metrics", "Start here", "User gym access", "Signup activity", "Financial ledger", "Daily metrics", "Daily gym demand", "Daily filter usage", "Daily city activity", "Raw events", "Audit notes"].includes(sheet.properties?.title ?? "") && sheet.properties?.sheetId !== undefined);
   if (retired.length) {
     await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: retired.map(sheet => ({ deleteSheet: { sheetId: sheet.properties!.sheetId } })) }) });
   }

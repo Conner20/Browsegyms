@@ -273,7 +273,40 @@ export async function buildAdminMetricsWorkbook() {
       sheet.spliceColumns(gymColumn, 1); sheet.spliceColumns(1, 0, values);
     }
   }
-  const tabOrder = ["Overview", "Users", "Gym claim log", "Landing-page demand", "User and demand growth", "Gym demand funnel", "Gym claim clicks", "Popular cities", "Filter usage", "Financial Metrics", "Financial growth", "Revenue by gym", "Unclaimed gym opportunity", "User spending", "Revenue by offer"];
+  // Join tables at their native grain: one account/email or one stable gym ID.
+  const spendByEmail = new Map<string, ExcelJS.CellValue[]>();
+  spending.eachRow((row, index) => { if (index > 1) spendByEmail.set(row.getCell(1).text.trim().toLowerCase(), Array.from({ length: 5 }, (_, column) => row.getCell(column + 2).value)); });
+  const spendingHeaders = ["Total spent", "Day-pass spending", "Membership spending", "Confirmed payments", "Average payment"];
+  spendingHeaders.forEach((header, index) => { userSheet.getCell(1, 16 + index).value = header; });
+  userSheet.eachRow((row, index) => {
+    if (index === 1) return;
+    const email = row.getCell(1).text.trim().toLowerCase();
+    const totals = spendByEmail.get(email) ?? [0, 0, 0, 0, 0];
+    totals.forEach((value, column) => { row.getCell(16 + column).value = value; });
+    spendByEmail.delete(email);
+  });
+  for (const [email, totals] of spendByEmail) userSheet.addRow([email, "Historical spending (no matching account)", ...Array(13).fill(""), ...totals]);
+
+  const combinedGyms = addTable("Gyms", ["Gym", "Claimed", "Owner", "Claimed when", "Assigned by", "Last updated", ...Array.from({ length: 10 }, (_, i) => gymSheet.getRow(1).getCell(i + 2).text), "Gym ID"]);
+  gyms.forEach((gym, index) => {
+    const ownership = claims.getRow(index + 2), funnel = gymSheet.getRow(index + 2);
+    combinedGyms.addRow([gym.name, ...Array.from({ length: 5 }, (_, i) => ownership.getCell(i + 2).value), ...Array.from({ length: 10 }, (_, i) => funnel.getCell(i + 2).value), gym.id]);
+  });
+
+  const combinedFinancials = addTable("Gym financials", ["Gym", "Customers supplied", "Monthly recurring revenue", ...revenueHeaders, "User-reported purchases", "Day-pass purchases", "Membership purchases", "Potential customers", "Estimated day-pass revenue", "Estimated membership revenue", "Estimated attributed revenue", "Gym ID"]);
+  revenueByGym.eachRow((row, index) => {
+    if (index === 1) return;
+    const id = row.getCell(9).text, opportunity = opportunities.get(id);
+    combinedFinancials.addRow([...Array.from({ length: 8 }, (_, i) => row.getCell(i + 1).value), opportunity?.purchases ?? 0, opportunity?.dayPassPurchases ?? 0, opportunity?.membershipPurchases ?? 0, opportunity?.customers.size ?? 0, opportunity?.dayPassEstimated ?? 0, opportunity?.membershipEstimated ?? 0, opportunity?.estimated ?? 0, id]);
+  });
+
+  summary.getCell("F1").value = "Period";
+  summary.getCell("G1").value = "Meaning";
+  summary.addRow(["Landing-page demand", "", "", "", "", "All time"]);
+  demand.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time"]); });
+  summary.addRow(["Financial metrics", "", "", "", "", "All time"]);
+  financial.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time", row.getCell(3).value]); });
+  const tabOrder = ["Overview", "Users", "Gyms", "User and demand growth", "Gym claim clicks", "Popular cities", "Filter usage", "Financial growth", "Gym financials", "Revenue by offer"];
   const ordered = new ExcelJS.Workbook();
   ordered.creator = workbook.creator; ordered.created = workbook.created; ordered.modified = workbook.modified;
   for (const name of tabOrder) {

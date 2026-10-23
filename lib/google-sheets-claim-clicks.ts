@@ -5,7 +5,7 @@ type DataSheet = { title: string; rows: number; values: (string | number | boole
 
 export function claimClickRequests(sheets: DataSheet[], sheetId: number, previousGym?: string) {
   const source = sheets.find(sheet => sheet.title === CLAIM_CLICKS_TITLE)!;
-  const directory = sheets.find(sheet => sheet.title === "Revenue by gym")!;
+  const directory = sheets.find(sheet => sheet.title === "Gym financials")!;
   const idColumn = directory.values[0].indexOf("Gym ID");
   const gyms = directory.values.slice(1).map(row => ({ name: String(row[0]), id: String(row[idColumn]) }));
   const options = [["Select a gym", ""], ...gyms.map(gym => [gyms.filter(other => other.name === gym.name).length > 1 || gym.name === "Select a gym" ? `${gym.name} [${gym.id}]` : gym.name, gym.id])];
