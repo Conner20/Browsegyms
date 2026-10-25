@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { cookies } from "next/headers";
 import LogInForm from "@/components/form/LogInForm";
 import { authOptions } from "@/lib/auth";
-import { getValidPendingGymInvite, PENDING_GYM_INVITE_COOKIE } from "@/lib/pending-gym-invite";
+import { getValidPendingGymInvite, PENDING_GYM_INVITE_COOKIE, LEGACY_GYM_INVITE_COOKIE } from "@/lib/pending-gym-invite";
 
 const page = async ({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) => {
     const session = await getServerSession(authOptions);
@@ -13,7 +13,7 @@ const page = async ({ searchParams }: { searchParams: Promise<{ callbackUrl?: st
     const cookieStore = await cookies();
     // A gym claim is an administrator-issued, time-limited workflow. Keep it
     // ahead of unrelated purchase callbacks until the listing is claimed.
-    const pendingInvite = await getValidPendingGymInvite(cookieStore.get(PENDING_GYM_INVITE_COOKIE)?.value);
+    const pendingInvite = await getValidPendingGymInvite(cookieStore.get(PENDING_GYM_INVITE_COOKIE)?.value ?? cookieStore.get(LEGACY_GYM_INVITE_COOKIE)?.value);
     const referralCallback = /^\/referrals\/review\/[A-Za-z0-9_-]+$/.test(explicitCallback);
     const callbackUrl = referralCallback ? explicitCallback : pendingInvite ? `/gym-invite/${encodeURIComponent(pendingInvite)}` : explicitCallback || "/";
     if (session?.user) {

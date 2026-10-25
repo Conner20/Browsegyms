@@ -19,7 +19,7 @@ function preserveGreenColors(event: SyntheticEvent<HTMLAnchorElement>) {
     link.style.setProperty("opacity", "1", "important");
 }
 
-export default function StableExploreLink({ className, href = "/", children = "Explore Fitting In" }: { className: string; href?: string; children?: ReactNode }) {
+export default function StableExploreLink({ className, href = "/", children = "Explore Browsegyms" }: { className: string; href?: string; children?: ReactNode }) {
     const usesLandingHeaderStates = className.split(/\s+/).includes("landing-gym-listing-button");
 
     return (

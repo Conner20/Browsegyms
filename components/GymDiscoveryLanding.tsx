@@ -1,4 +1,6 @@
 "use client";
+import { readStoredValue, writeStoredValue, removeStoredValue } from "@/lib/browser-storage";
+import BrandIcon from "@/components/BrandIcon";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import {
@@ -343,7 +345,7 @@ export default function GymDiscoveryLanding({
     let cancelled = false,
       recorded = false;
     if (
-      localStorage.getItem("fittingin_location_consent") !== "true" ||
+      readStoredValue(localStorage, "browsegyms_location_consent") !== "true" ||
       !navigator.geolocation
     )
       return;
@@ -417,10 +419,10 @@ export default function GymDiscoveryLanding({
   }, []);
   useEffect(() => {
     visitor.current =
-      localStorage.getItem("fittingin_visitor_id") || createBrowserId();
-    localStorage.setItem("fittingin_visitor_id", visitor.current);
+      readStoredValue(localStorage, "browsegyms_visitor_id") || createBrowserId();
+    writeStoredValue(localStorage, "browsegyms_visitor_id", visitor.current);
     visit.current = createBrowserId();
-    sessionStorage.setItem("fittingin_visit_id", visit.current);
+    writeStoredValue(sessionStorage, "browsegyms_visit_id", visit.current);
     started.current = Date.now();
     track("VISIT", { metadata: { referrer: document.referrer || null } });
     const end = () =>
@@ -455,7 +457,7 @@ export default function GymDiscoveryLanding({
     else
       try {
         setFavorites(
-          JSON.parse(localStorage.getItem("fittingin_favorite_gyms") || "[]"),
+          JSON.parse(readStoredValue(localStorage, "browsegyms_favorite_gyms") || "[]"),
         );
       } catch {}
   }, [signedIn, status]);
@@ -501,9 +503,9 @@ export default function GymDiscoveryLanding({
     const showPending = () => {
       if (document.visibilityState !== "visible") return;
       for (const intent of ["dayPass", "membership"] as const) {
-        const key = `fittingin_pending_${intent === "membership" ? "membership" : "day_pass"}_confirmation`;
+        const key = `browsegyms_pending_${intent === "membership" ? "membership" : "day_pass"}_confirmation`;
         try {
-          const raw = localStorage.getItem(key);
+          const raw = readStoredValue(localStorage, key);
           if (!raw) continue;
           const pending = JSON.parse(raw) as {
             gymId?: string;
@@ -522,7 +524,7 @@ export default function GymDiscoveryLanding({
           setPurchaseConfirmation({ gymId: pending.gymId, gymName, intent });
           break;
         } catch {
-          localStorage.removeItem(key);
+          removeStoredValue(localStorage, key);
         }
       }
     };
@@ -551,13 +553,13 @@ export default function GymDiscoveryLanding({
         gymId: gym.id,
         metadata: { optionId, optionName, price, url: destination, clickedAt },
       });
-      localStorage.setItem("fittingin_membership_clicked_at", clickedAt);
+      writeStoredValue(localStorage, "browsegyms_membership_clicked_at", clickedAt);
       if (!signedIn) {
         setDayPassPrompt({ gym, intent: "membership", optionId });
         return;
       }
-      localStorage.setItem(
-        "fittingin_pending_membership_confirmation",
+      writeStoredValue(localStorage,
+        "browsegyms_pending_membership_confirmation",
         JSON.stringify({
           gymId: gym.id,
           gymName: gym.name,
@@ -581,7 +583,7 @@ export default function GymDiscoveryLanding({
       let local: string[] = [];
       try {
         local = JSON.parse(
-          localStorage.getItem("fittingin_favorite_gyms") || "[]",
+          readStoredValue(localStorage, "browsegyms_favorite_gyms") || "[]",
         );
       } catch {}
       const response = await fetch("/api/gym-favorites", { cache: "no-store" });
@@ -601,7 +603,7 @@ export default function GymDiscoveryLanding({
       );
       if (active) {
         setFavorites(merged);
-        localStorage.removeItem("fittingin_favorite_gyms");
+        removeStoredValue(localStorage, "browsegyms_favorite_gyms");
       }
     })();
     return () => {
@@ -767,7 +769,7 @@ export default function GymDiscoveryLanding({
   const locate = (event?: React.MouseEvent<HTMLButtonElement>) => {
     dismissMobileKeyboard();
     setLocationMenuOpen(false);
-    if (localStorage.getItem("fittingin_location_consent") === "true") {
+    if (readStoredValue(localStorage, "browsegyms_location_consent") === "true") {
       requestCurrentLocation(event);
       return;
     }
@@ -779,7 +781,7 @@ export default function GymDiscoveryLanding({
     setFavorites(next);
     track(removing ? "FAVORITE_REMOVED" : "FAVORITE_ADDED", { gymId: id });
     if (!signedIn) {
-      localStorage.setItem("fittingin_favorite_gyms", JSON.stringify(next));
+      writeStoredValue(localStorage, "browsegyms_favorite_gyms", JSON.stringify(next));
       return;
     }
     const r = await fetch("/api/gym-favorites", {
@@ -814,11 +816,11 @@ export default function GymDiscoveryLanding({
       gymId: g.id,
       metadata: { optionId: selectedOption?.id, durationDays: selectedOption?.durationDays, price: selectedOption?.price ?? cost(g, "dayPass"), url: destination, clickedAt },
     });
-    localStorage.setItem("fittingin_day_pass_clicked_at", clickedAt);
+    writeStoredValue(localStorage, "browsegyms_day_pass_clicked_at", clickedAt);
     if (signedIn) {
       if (destination) {
-        localStorage.setItem(
-          "fittingin_pending_day_pass_confirmation",
+        writeStoredValue(localStorage,
+          "browsegyms_pending_day_pass_confirmation",
           JSON.stringify({
             gymId: g.id,
             gymName: g.name,
@@ -855,7 +857,7 @@ export default function GymDiscoveryLanding({
     if (window.innerWidth >= 768) return;
     try {
       if (
-        localStorage.getItem("fittingin_profile_swipe_compare_seen_v2") ===
+        readStoredValue(localStorage, "browsegyms_profile_swipe_compare_seen_v2") ===
         "true"
       )
         return;
@@ -865,7 +867,7 @@ export default function GymDiscoveryLanding({
   const dismissSwipeTutorial = () => {
     if (!showSwipeHint) return;
     try {
-      localStorage.setItem("fittingin_profile_swipe_compare_seen_v2", "true");
+      writeStoredValue(localStorage, "browsegyms_profile_swipe_compare_seen_v2", "true");
     } catch {}
     setShowSwipeHint(false);
   };
@@ -899,9 +901,7 @@ export default function GymDiscoveryLanding({
     >
       <header className="relative z-[1200] border-b bg-white dark:border-white/10 dark:bg-[#0b0d0b]">
         <div className="flex min-h-16 flex-nowrap items-center gap-2 px-3 py-2 md:h-16 md:gap-4 md:px-4 md:py-0">
-          <Link href="/" className="text-[22px] font-black text-[#22c55e]">
-            fitt<span className="underline">in</span>g
-          </Link>
+          <BrandIcon />
           <form
             onSubmit={search}
             onFocus={() => setLocationMenuOpen(true)}
@@ -1433,11 +1433,11 @@ export default function GymDiscoveryLanding({
             <h2 className="text-2xl font-black">Allow Location Access?</h2>
             <div className="mx-auto mt-3 max-w-xl space-y-3 text-sm leading-6 text-white/60">
               <p>
-                Fitting In uses your precise location to show you nearby matches
+                Browsegyms uses your precise location to show you nearby matches
                 and improve recommendations.
               </p>
               <p>
-                By selecting &quot;Agree,&quot; you consent to Fitting In&apos;s
+                By selecting &quot;Agree,&quot; you consent to Browsegyms&apos;s
                 collection and use of your precise location as described in our{" "}
                 <Link
                   href="/legal/terms"
@@ -1466,7 +1466,7 @@ export default function GymDiscoveryLanding({
               <button
                 type="button"
                 onClick={() => {
-                  localStorage.setItem("fittingin_location_consent", "true");
+                  writeStoredValue(localStorage, "browsegyms_location_consent", "true");
                   setLocationConsentOpen(false);
                   requestCurrentLocation();
                 }}
@@ -1592,8 +1592,8 @@ export default function GymDiscoveryLanding({
       {purchaseConfirmation && (
         <Shell
           close={() => {
-            localStorage.removeItem(
-              `fittingin_pending_${purchaseConfirmation.intent === "membership" ? "membership" : "day_pass"}_confirmation`,
+            removeStoredValue(localStorage,
+              `browsegyms_pending_${purchaseConfirmation.intent === "membership" ? "membership" : "day_pass"}_confirmation`,
             );
             setPurchaseConfirmation(null);
           }}
@@ -1616,8 +1616,8 @@ export default function GymDiscoveryLanding({
                       : "DAY_PASS_CLAIM_CONFIRMED",
                     { gymId: purchaseConfirmation.gymId },
                   );
-                  localStorage.removeItem(
-                    `fittingin_pending_${purchaseConfirmation.intent === "membership" ? "membership" : "day_pass"}_confirmation`,
+                  removeStoredValue(localStorage,
+                    `browsegyms_pending_${purchaseConfirmation.intent === "membership" ? "membership" : "day_pass"}_confirmation`,
                   );
                   setPurchaseConfirmation(null);
                 }}
@@ -1634,8 +1634,8 @@ export default function GymDiscoveryLanding({
                       : "DAY_PASS_CLAIM_DECLINED",
                     { gymId: purchaseConfirmation.gymId },
                   );
-                  localStorage.removeItem(
-                    `fittingin_pending_${purchaseConfirmation.intent === "membership" ? "membership" : "day_pass"}_confirmation`,
+                  removeStoredValue(localStorage,
+                    `browsegyms_pending_${purchaseConfirmation.intent === "membership" ? "membership" : "day_pass"}_confirmation`,
                   );
                   setPurchaseConfirmation(null);
                 }}

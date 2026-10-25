@@ -1,10 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "fitting-in-metrics-sync",
+  "name": "browsegyms-metrics-sync",
   "main": "metrics-sync-worker.js",
   "compatibility_date": "2026-10-06",
   "triggers": {
-    "crons": ["*/15 * * * *"]
+    "crons": [
+      "*/15 * * * *"
+    ]
   },
   "observability": {
     "logs": {
@@ -18,5 +20,8 @@
       "head_sampling_rate": 1,
       "persist": true
     }
+  },
+  "vars": {
+    "BROWSEGYMS_SYNC_URL": "https://browsegyms.com/api/cron/google-sheets"
   }
 }

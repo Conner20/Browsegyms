@@ -159,7 +159,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   }
 
   const propertiesByTitle = new Map((metadata.sheets ?? []).flatMap(sheet => sheet.properties?.title && sheet.properties.sheetId !== undefined ? [[sheet.properties.title, sheet.properties] as const] : []));
-  const formatRequests = [{ updateSpreadsheetProperties: { properties: { timeZone: METRICS_TIME_ZONE }, fields: "timeZone" } }, ...sheets.flatMap((sheet, index) => {
+  const formatRequests = [{ updateSpreadsheetProperties: { properties: { timeZone: METRICS_TIME_ZONE, title: "Browsegyms Metrics" }, fields: "timeZone,title" } }, ...sheets.flatMap((sheet, index) => {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, sheet.title === CLAIM_CLICKS_TITLE ? (sheets.find(item => item.title === "Gym financials")?.rows ?? 0) + 1 : 0, 1_000);

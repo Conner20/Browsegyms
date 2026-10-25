@@ -27,7 +27,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
 (async () => {
   const book = await buildAdminMetricsWorkbook();
   assert.equal(book.worksheets[0].name, 'Overview');
-  const expectedTabs = ['Overview', 'Users', 'Gyms', 'User and demand growth', 'Gym claim clicks', 'Popular cities', 'Filter usage', 'Financial growth', 'Gym financials', 'Revenue by offer'];
+  const expectedTabs = ['Overview', 'Users', 'User and demand growth', 'Gyms', 'Gym claim clicks', 'Gym financials', 'Financial growth', 'Revenue by offer', 'Popular cities', 'Filter usage'];
   assert.deepEqual(book.worksheets.map(sheet => sheet.name), expectedTabs, 'only the admin overview reports remain');
   for (const sheet of book.worksheets) sheet.eachRow(row => row.eachCell(cell => assert(!/\bMRR\b|monthly recurring revenue/i.test(String(cell.value ?? '')), 'MRR is absent from all exported cells')));
   const removedTabs = ['Gym claim log', 'Gym demand funnel', 'Revenue by gym', 'Unclaimed gym opportunity', 'User spending', 'Landing-page demand', 'Financial Metrics', 'Claim activity log', 'Claim activity', 'User gym access', 'Signup activity', 'Financial ledger', 'Daily metrics', 'Daily gym demand', 'Daily filter usage', 'Daily city activity', 'Raw events', 'Audit notes'];

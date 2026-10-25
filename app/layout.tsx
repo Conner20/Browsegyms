@@ -11,17 +11,17 @@ const anonymousPro = Anonymous_Pro({
   variable: "--font-anonymous-pro",
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://fittingin.co";
-const siteName = "Fitting In";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://browsegyms.com";
+const siteName = "Browsegyms";
 const description = "Find the right gym at the right price.";
-const previewImage = `${siteUrl}/images/share_card.png`;
-const pwaIcon = "/favicon_black.ico";
+const previewImage = `${siteUrl}/brand/browsegyms-share.png`;
+const pwaIcon = "/brand/browsegyms-apple.png?v=2";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: siteName,
-    template: `%s | ${siteName}`,
+    default: "Browse  Gyms",
+    template: "%s | Browse  Gyms",
   },
   description,
   openGraph: {
@@ -36,14 +36,14 @@ export const metadata: Metadata = {
         url: previewImage,
         width: 1200,
         height: 630,
-        alt: "Preview of Fitting In",
+        alt: "Preview of Browsegyms",
       },
     ],
   },
   manifest: "/site.webmanifest",
   icons: {
     icon: [
-      { url: "/favicon.ico" },
+      { url: "/favicon.ico?v=2" },
     ],
     apple: [{ url: pwaIcon, sizes: "180x180" }],
   },

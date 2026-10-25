@@ -17,7 +17,7 @@ export async function GET(request: Request) {
       url.searchParams.set("lon", String(lng));
       url.searchParams.set("format", "jsonv2");
       url.searchParams.set("addressdetails", "1");
-      const response = await fetch(url, { headers: { "User-Agent": "FittingIn/1.0 (https://fittingin.co)" }, next: { revalidate: 300 } });
+      const response = await fetch(url, { headers: { "User-Agent": "Browsegyms/1.0 (https://browsegyms.com)" }, next: { revalidate: 300 } });
       const result = response.ok ? await response.json() : null;
       const address = result?.address as Record<string, string> | undefined;
       const city = address?.city ?? address?.town ?? address?.village ?? address?.municipality ?? address?.borough ?? address?.city_district ?? address?.county ?? "";
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
     url.searchParams.set("countrycodes", "us");
     url.searchParams.set("addressdetails", "1");
     const response = await fetch(url, {
-      headers: { "User-Agent": "FittingIn/1.0 (https://fittingin.co)" },
+      headers: { "User-Agent": "Browsegyms/1.0 (https://browsegyms.com)" },
       next: { revalidate: 300 },
     });
     const results = response.ok ? await response.json() : [];

@@ -1,4 +1,5 @@
 "use client";
+import BrandIcon from "@/components/BrandIcon";
 
 import { useMemo, useState } from "react";
 import type { ConversionReviewRow, ConversionReviewStatus } from "@/lib/conversion-review";
@@ -42,7 +43,7 @@ export default function GymConversionReview({ token, gymName, expiresAt, initial
   return <main className="min-h-screen bg-[#050505] px-4 py-10 text-white">
     <section className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-[#111411] shadow-2xl">
       <header className="border-b border-white/10 p-6 sm:p-8">
-        <p className="text-sm font-black text-[#22c55e]">Fitting In</p>
+        <BrandIcon />
         <h1 className="mt-2 text-3xl font-black">Confirm referrals for {gymName}</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected day pass or membership, or whether their existing membership is still active.</p>
         <p className="mt-3 text-xs text-white/40">This secure link expires {new Date(expiresAt).toLocaleString()}.</p>

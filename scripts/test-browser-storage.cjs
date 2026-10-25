@@ -1,0 +1,18 @@
+const assert = require('node:assert/strict');
+require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'commonjs', moduleResolution: 'node' } });
+const { readStoredValue, writeStoredValue, removeStoredValue } = require('../lib/browser-storage.ts');
+const data = new Map();
+const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+data.set('fittingin_favorite_gyms', '["gym1"]');
+assert.equal(readStoredValue(storage, 'browsegyms_favorite_gyms'), '["gym1"]');
+assert(!data.has('fittingin_favorite_gyms'));
+data.set('fittingin_favorite_gyms', '["stale"]');
+assert.equal(readStoredValue(storage, 'browsegyms_favorite_gyms'), '["gym1"]');
+writeStoredValue(storage, 'browsegyms_favorite_gyms', '["gym2"]');
+assert(!data.has('fittingin_favorite_gyms'));
+data.set('fittingin_favorite_gyms', '["stale"]');
+removeStoredValue(storage, 'browsegyms_favorite_gyms');
+assert.equal(readStoredValue(storage, 'browsegyms_favorite_gyms'), null);
+writeStoredValue(storage, 'theme', 'dark');
+assert.equal(readStoredValue(storage, 'theme'), 'dark');
+console.log('PASS: saved browser data migrates, current values win, deletions cannot restore stale values.');

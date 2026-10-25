@@ -1,4 +1,5 @@
 'use client';
+import BrandIcon from "@/components/BrandIcon";
 
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -8,10 +9,8 @@ export default function LandingHeader() {
     return (
         <header className="relative z-[1200] border-b bg-white text-[#1c241c] dark:border-white/10 dark:bg-[#0b0d0b] dark:text-white">
             <div className="landing-primary-header-row flex min-h-16 flex-wrap items-center gap-2 px-3 py-2 md:h-16 md:flex-nowrap md:gap-4 md:px-4 md:py-0">
-                <Link href="/" className="shrink-0 text-[22px] font-black text-[#22c55e]">
-                    fitt<span className="underline">in</span>g
-                </Link>
 
+                <BrandIcon />
                 {status === 'unauthenticated' && <nav className="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
                     <Link
                         href="/log-in"

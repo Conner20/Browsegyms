@@ -1,4 +1,5 @@
 'use client'
+import { writeStoredValue } from "@/lib/browser-storage";
 
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "../ui/form";
 import { useForm } from "react-hook-form"
@@ -65,7 +66,7 @@ const LogInForm = ({ defaultCallbackUrl = "/" }: { defaultCallbackUrl?: string }
             setErrorMessage(null);
             setShowResendPrompt(false);
             if (purchaseGymId) {
-                localStorage.setItem(`fittingin_pending_${purchaseIntent === "membership" ? "membership" : "day_pass"}_confirmation`, JSON.stringify({ gymId: decodeURIComponent(purchaseGymId), openedAt: Date.now() }));
+                writeStoredValue(localStorage, `browsegyms_pending_${purchaseIntent === "membership" ? "membership" : "day_pass"}_confirmation`, JSON.stringify({ gymId: decodeURIComponent(purchaseGymId), openedAt: Date.now() }));
                 const destinationPath = callbackUrl;
                 if (externalTab) {
                     externalTab.location.href = `${window.location.origin}${destinationPath}`;

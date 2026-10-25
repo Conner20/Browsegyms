@@ -1,3 +1,4 @@
+import { LEGACY_GYM_INVITE_COOKIE, PENDING_REFERRAL_COOKIE, LEGACY_REFERRAL_COOKIE } from "@/lib/brand-cookies";
 import { getListingVerification } from "@/lib/listing-verification";
 import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
@@ -59,14 +60,16 @@ export async function PATCH(req: Request, { params }: Context) {
         throw error;
     }
 
-    const pendingReferral = invite.kind === "referral" ? token : (await cookies()).get("fittingin_pending_referral")?.value;
+    const cookieStore = await cookies();
+    const pendingReferral = invite.kind === "referral" ? token : cookieStore.get(PENDING_REFERRAL_COOKIE)?.value ?? cookieStore.get(LEGACY_REFERRAL_COOKIE)?.value;
     const referral = pendingReferral ? await db.gymConversionReviewLink.findFirst({
         where: { tokenHash: sha256Hex(pendingReferral), gymId: invite.gymId, expiresAt: { gt: new Date() } }, select: { id: true },
     }) : null;
     const response = NextResponse.json({ message: `You claimed and verified ${invite.gym.name}.`, gymId: invite.gymId,
         ...(referral ? { redirectTo: `/referrals/review/${encodeURIComponent(pendingReferral!)}` } : {}),
     });
-    if (referral) response.cookies.delete("fittingin_pending_referral");
+    if (referral) { response.cookies.delete(PENDING_REFERRAL_COOKIE); response.cookies.delete(LEGACY_REFERRAL_COOKIE); }
     response.cookies.delete(PENDING_GYM_INVITE_COOKIE);
+    response.cookies.delete(LEGACY_GYM_INVITE_COOKIE);
     return response;
 }

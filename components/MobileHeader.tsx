@@ -1,4 +1,5 @@
 'use client';
+import BrandIcon from "@/components/BrandIcon";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -23,6 +24,7 @@ export default function MobileHeader({
     titleAlign = "center",
     onMobileNavVisibilityChange,
 }: MobileHeaderProps) {
+    const showTitle = title.trim().toLowerCase() !== "browsegyms";
     const [mobileNavOpen, setMobileNavOpen] = useState(true);
 
     useEffect(() => {
@@ -68,36 +70,26 @@ export default function MobileHeader({
                 )}
                 {titleAlign === "left" ? (
                     <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-                        <h1 className="min-w-0 flex-1 select-none text-left font-roboto text-2xl tracking-tight text-[#22c55e] sm:text-3xl">
+                        {!showTitle && <BrandIcon href={href} />}
+                        {showTitle && <h1 className="min-w-0 flex-1 select-none text-left font-roboto text-2xl tracking-tight text-[#22c55e] sm:text-3xl">
                             <Link href={href} className="block truncate cursor-pointer">
-                                {title.toLowerCase() === "fitting" ? (
-                                    <span className="font-semibold">
-                                        fitt<span className="underline decoration-2 decoration-green-600 underline-offset-[2px] dark:decoration-green-400">in</span>g
-                                    </span>
-                                ) : (
-                                    <span className="block truncate">{title}</span>
-                                )}
+                                <span className="block truncate">{title}</span>
                             </Link>
-                        </h1>
+                        </h1>}
                         <div className="flex shrink-0 items-center gap-2">
                             {rightAccessory}
                         </div>
                     </div>
                 ) : (
                     <>
-                        <h1
+                        {!showTitle && <div className="flex w-full justify-center"><BrandIcon href={href} /></div>}
+                        {showTitle && <h1
                             className="w-full select-none truncate px-10 text-center font-roboto text-2xl tracking-tight text-[#22c55e] sm:text-3xl"
                         >
                             <Link href={href} className="cursor-pointer">
-                                {title.toLowerCase() === "fitting" ? (
-                                    <span className="font-semibold">
-                                        fitt<span className="underline decoration-2 decoration-green-600 underline-offset-[2px] dark:decoration-green-400">in</span>g
-                                    </span>
-                                ) : (
-                                    <span>{title}</span>
-                                )}
+                                <span>{title}</span>
                             </Link>
-                        </h1>
+                        </h1>}
                         <div className="absolute right-4 top-1/2 flex -translate-y-1/2 items-center gap-2">
                             {rightAccessory}
                         </div>

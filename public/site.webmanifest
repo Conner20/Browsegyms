@@ -1,15 +1,15 @@
 {
-  "name": "Fitting In",
-  "short_name": "Fitting In",
+  "name": "Browsegyms",
+  "short_name": "Browsegyms",
   "start_url": "/home",
   "display": "standalone",
   "background_color": "#050505",
   "theme_color": "#050505",
   "icons": [
     {
-      "src": "/favicon.ico",
-      "sizes": "64x64 32x32 24x24 16x16",
-      "type": "image/x-icon",
+      "src": "/brand/browsegyms-icon.png?v=2",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ]

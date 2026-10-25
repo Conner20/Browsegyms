@@ -1,3 +1,4 @@
+import { PENDING_GYM_INVITE_COOKIE, PENDING_REFERRAL_COOKIE } from "@/lib/brand-cookies";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
@@ -17,7 +18,6 @@ const PUBLIC_PATHS = [
 ];
 
 const RETAINED_PAGE_PREFIXES = ["/admin", "/gym-invite", "/gym-listing", "/day-pass", "/change-password"];
-const PENDING_GYM_INVITE_COOKIE = "fittingin_pending_gym_invite";
 const PENDING_GYM_INVITE_MAX_AGE = 60 * 60 * 24 * 14;
 
 const startsWithAny = (pathname: string, prefixes: string[]) =>
@@ -44,7 +44,7 @@ export async function middleware(req: NextRequest) {
     if (isPublic) {
         const response = NextResponse.next();
         const referralMatch = pathname.match(/^\/referrals\/review\/([A-Za-z0-9_-]+)\/?$/);
-        if (referralMatch) response.cookies.set("fittingin_pending_referral", referralMatch[1], {
+        if (referralMatch) response.cookies.set(PENDING_REFERRAL_COOKIE, referralMatch[1], {
             httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14,
         });
         const inviteMatch = pathname.match(/^\/gym-invite\/([^/]+)\/?$/);

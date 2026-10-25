@@ -1,4 +1,4 @@
-# Fitting In
+# Browsegyms
 
 Find the right gym at the right price.
 
@@ -26,7 +26,7 @@ NEXTAUTH_SECRET=your-secret
 R2_ACCOUNT_ID=your-cloudflare-account-id
 R2_ACCESS_KEY_ID=your-scoped-r2-access-key
 R2_SECRET_ACCESS_KEY=your-scoped-r2-secret-key
-R2_BUCKET_NAME=fitting-in-media
+R2_BUCKET_NAME=your-existing-media-bucket
 R2_PUBLIC_BASE_URL=https://media.example.com
 GOOGLE_SHEETS_SPREADSHEET_ID=your-spreadsheet-id
 GOOGLE_SERVICE_ACCOUNT_EMAIL=metrics-sync@your-project.iam.gserviceaccount.com
@@ -69,9 +69,9 @@ by Git and must be stored securely with the database backup until the rollback w
 
 ### Metrics workbook layout
 
-The workbook has 10 tabs: Overview, Users, Gyms, User and demand growth,
-Gym claim clicks, Popular cities, Filter usage, Financial growth, Gym financials,
-and Revenue by offer.
+The workbook has 10 tabs, ordered by overview, user data, gym data, financials,
+and other reports: Overview, Users, User and demand growth, Gyms, Gym claim clicks,
+Gym financials, Financial growth, Revenue by offer, Popular cities, and Filter usage.
 
 Overview combines the original five period-selectable metrics with clearly labeled
 all-time Demand and Financial sections. Users includes spending and retains historical
@@ -84,7 +84,7 @@ Unclaimed gym opportunity, User spending, Landing-page demand, and Financial Met
 tabs, along with these retired managed tabs, after replacement reports and
 charts succeed: User gym access, Signup activity, Financial ledger, Daily metrics,
 Daily gym demand, Daily filter usage, Daily city activity, Raw events, Audit notes,
-Claim activity log, Claim activity, Start here, and the old Fitting In Metrics combined tab. Custom tabs are preserved.
+Claim activity log, Claim activity, Start here, and the legacy combined metrics tab. Custom tabs are preserved.
 Removed tabs are no longer generated in the Excel export or Google Sheet. Source
 records remain in PostgreSQL; clearing metrics in the app still removes event
 history and is reflected in the next successful sheet sync.

@@ -1,6 +1,6 @@
 import { getListingVerification } from "@/lib/listing-verification";
 
-export const PENDING_GYM_INVITE_COOKIE = "fittingin_pending_gym_invite";
+export { PENDING_GYM_INVITE_COOKIE, LEGACY_GYM_INVITE_COOKIE } from "@/lib/brand-cookies";
 export const PENDING_GYM_INVITE_MAX_AGE = 60 * 60 * 24 * 14;
 
 export async function getValidPendingGymInvite(rawToken?: string | null) {
