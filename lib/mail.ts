@@ -7,11 +7,11 @@ const resendClient = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_
 async function sendMail(to: string, subject: string, html: string, fallbackLabel: string, fallbackUrl: string, replyTo?: string) {
     if (resendClient) {
         const { error } = await resendClient.emails.send({
-            from: (process.env.EMAIL_FROM || "Browsegyms <mail@fittingin.co>").replace(/^Fitting In(?=\s*<)/i, "Browsegyms"),
+            from: (process.env.EMAIL_FROM || "Browse Gyms <mail@browsegyms.com>").replace(/^(?:Fitting In|Browsegyms)(?=\s*<)/i, "Browse Gyms"),
             to,
             subject,
             html,
-            replyTo,
+            replyTo: replyTo ?? "browsegyms@gmail.com",
         });
         if (error) {
             console.error("[mail] resend error", error);
@@ -30,13 +30,13 @@ function escapeHtml(value: string) {
 
 export async function sendContactMessage(input: { firstName: string; lastName: string; email: string; message: string }) {
     const name = `${input.firstName} ${input.lastName}`.trim();
-    const subject = `Browsegyms contact form — ${name}`;
+    const subject = `Browse Gyms contact form — ${name}`;
     const html = `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:32px 20px;color:#111827"><h1 style="font-size:22px">New contact message</h1><p><strong>From:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> <a href="mailto:${escapeHtml(input.email)}">${escapeHtml(input.email)}</a></p><hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0"><div style="white-space:pre-wrap;line-height:1.6">${escapeHtml(input.message)}</div></div>`;
     await sendMail("browsegyms@gmail.com", subject, html, "[contact-form]", `[contact-form] ${name} <${input.email}>: ${input.message}`, input.email);
 }
 
 export const sendPasswordResetEmail: Mailer = async (to, resetUrl) => {
-    const subject = "Reset your Browsegyms password";
+    const subject = "Reset your Browse Gyms password";
 
     const html = `
       <head>
@@ -57,7 +57,7 @@ export const sendPasswordResetEmail: Mailer = async (to, resetUrl) => {
                             style="padding:32px;font-family:Arial,Helvetica,sans-serif;color:#0f172a;text-align:center;">
                             <p
                                 style="margin:0 0 12px 0;font-size:13px;line-height:1.4;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:#16a34a;">
-                                Browsegyms
+                                Browse Gyms
                             </p>
 
                             <h1
@@ -100,13 +100,13 @@ export const sendPasswordResetEmail: Mailer = async (to, resetUrl) => {
 };
 
 export const sendEmailVerificationEmail: Mailer = async (to, verifyUrl) => {
-    const subject = "Verify your Browsegyms email";
+    const subject = "Verify your Browse Gyms email";
 
     const html = `
       <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Welcome to Browsegyms</title>
+    <title>Welcome to Browse Gyms</title>
 </head>
 
 <body style="margin:0;padding:0;background-color:#ffffff;">
@@ -126,7 +126,7 @@ export const sendEmailVerificationEmail: Mailer = async (to, verifyUrl) => {
 
                             <h1
                                 style="margin:0 0 16px 0;font-size:26px;line-height:1.25;font-weight:700;color:#0f172a;">
-                                Welcome to Browsegyms!
+                                Welcome to Browse Gyms!
                             </h1>
 
                             <p style="margin:0 0 24px 0;font-size:15px;line-height:1.6;color:#475569;">
@@ -166,7 +166,7 @@ export const sendEmailVerificationEmail: Mailer = async (to, verifyUrl) => {
 };
 
 export async function sendEmailVerificationCode(to: string, code: string) {
-    const subject = `${code} is your Browsegyms verification code`;
-    const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:40px 20px;text-align:center"><p style="color:#16a34a;font-size:13px;font-weight:700;letter-spacing:4px;text-transform:uppercase">Browsegyms</p><h1 style="font-size:26px;color:#111827">Verify your email</h1><p style="color:#64748b">Enter this six-digit code in Browsegyms. It expires in 10 minutes.</p><div style="margin:28px 0;font-size:38px;font-weight:800;letter-spacing:10px;color:#111827">${code}</div><p style="font-size:13px;color:#94a3b8">If you did not request this code, you can ignore this email.</p></div>`;
+    const subject = `${code} is your Browse Gyms verification code`;
+    const html = `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:40px 20px;text-align:center"><p style="color:#16a34a;font-size:13px;font-weight:700;letter-spacing:4px;text-transform:uppercase">Browse Gyms</p><h1 style="font-size:26px;color:#111827">Verify your email</h1><p style="color:#64748b">Enter this six-digit code in Browse Gyms. It expires in 10 minutes.</p><div style="margin:28px 0;font-size:38px;font-weight:800;letter-spacing:10px;color:#111827">${code}</div><p style="font-size:13px;color:#94a3b8">If you did not request this code, you can ignore this email.</p></div>`;
     await sendMail(to, subject, html, "[verification-code]", `[verification-code] ${to}: ${code}`);
 }

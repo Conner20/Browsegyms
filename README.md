@@ -1,4 +1,4 @@
-# Browsegyms
+# Browse Gyms
 
 Find the right gym at the right price.
 

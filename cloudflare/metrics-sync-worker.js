@@ -11,21 +11,21 @@ async function runSync(env) {
   const responseBody = await response.text();
 
   if (!response.ok) {
-    throw new Error(`Browsegyms metrics sync failed (${response.status}): ${responseBody.slice(0, 500)}`);
+    throw new Error(`Browse Gyms metrics sync failed (${response.status}): ${responseBody.slice(0, 500)}`);
   }
 
   let result;
   try {
     result = JSON.parse(responseBody);
   } catch {
-    throw new Error(`Browsegyms metrics sync returned an invalid response: ${responseBody.slice(0, 500)}`);
+    throw new Error(`Browse Gyms metrics sync returned an invalid response: ${responseBody.slice(0, 500)}`);
   }
 
   if (!result?.ok) {
-    throw new Error(`Browsegyms metrics sync did not report success: ${responseBody.slice(0, 500)}`);
+    throw new Error(`Browse Gyms metrics sync did not report success: ${responseBody.slice(0, 500)}`);
   }
 
-  console.log("Browsegyms metrics sync completed", {
+  console.log("Browse Gyms metrics sync completed", {
     status: response.status,
     spreadsheetId: result.spreadsheetId,
     tabs: result.tabs,

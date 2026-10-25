@@ -1433,11 +1433,11 @@ export default function GymDiscoveryLanding({
             <h2 className="text-2xl font-black">Allow Location Access?</h2>
             <div className="mx-auto mt-3 max-w-xl space-y-3 text-sm leading-6 text-white/60">
               <p>
-                Browsegyms uses your precise location to show you nearby matches
+                Browse Gyms uses your precise location to show you nearby matches
                 and improve recommendations.
               </p>
               <p>
-                By selecting &quot;Agree,&quot; you consent to Browsegyms&apos;s
+                By selecting &quot;Agree,&quot; you consent to Browse Gyms&apos;s
                 collection and use of your precise location as described in our{" "}
                 <Link
                   href="/legal/terms"

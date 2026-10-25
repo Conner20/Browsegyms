@@ -24,7 +24,7 @@ export default function MobileHeader({
     titleAlign = "center",
     onMobileNavVisibilityChange,
 }: MobileHeaderProps) {
-    const showTitle = title.trim().toLowerCase() !== "browsegyms";
+    const showTitle = title.trim().toLowerCase() !== "browse gyms";
     const [mobileNavOpen, setMobileNavOpen] = useState(true);
 
     useEffect(() => {

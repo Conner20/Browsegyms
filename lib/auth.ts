@@ -12,7 +12,7 @@ export const authOptions: NextAuthOptions = {
     session: {
         strategy: "jwt",
         // Browsers do not support a literally infinite cookie. One hundred years
-        // gives Browsegyms a practically permanent sign-in on a trusted device.
+        // gives Browse Gyms a practically permanent sign-in on a trusted device.
         maxAge: 60 * 60 * 24 * 365 * 100,
     },
     jwt: {

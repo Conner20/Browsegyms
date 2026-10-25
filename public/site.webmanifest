@@ -1,6 +1,6 @@
 {
-  "name": "Browsegyms",
-  "short_name": "Browsegyms",
+  "name": "Browse Gyms",
+  "short_name": "Browse Gyms",
   "start_url": "/home",
   "display": "standalone",
   "background_color": "#050505",

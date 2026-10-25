@@ -12,16 +12,16 @@ const anonymousPro = Anonymous_Pro({
 });
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://browsegyms.com";
-const siteName = "Browsegyms";
+const siteName = "Browse Gyms";
 const description = "Find the right gym at the right price.";
-const previewImage = `${siteUrl}/brand/browsegyms-share.png`;
+const previewImage = `${siteUrl}/brand/browsegyms-share.png?v=2`;
 const pwaIcon = "/brand/browsegyms-apple.png?v=2";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Browse  Gyms",
-    template: "%s | Browse  Gyms",
+    default: "Browse Gyms",
+    template: "%s | Browse Gyms",
   },
   description,
   openGraph: {
@@ -34,9 +34,9 @@ export const metadata: Metadata = {
     images: [
       {
         url: previewImage,
-        width: 1200,
-        height: 630,
-        alt: "Preview of Browsegyms",
+        width: 1672,
+        height: 941,
+        alt: "Browse Gyms — Find the right gym at the right price.",
       },
     ],
   },
