@@ -32,7 +32,7 @@ export async function sendContactMessage(input: { firstName: string; lastName: s
     const name = `${input.firstName} ${input.lastName}`.trim();
     const subject = `Browsegyms contact form — ${name}`;
     const html = `<div style="font-family:Arial,sans-serif;max-width:640px;margin:auto;padding:32px 20px;color:#111827"><h1 style="font-size:22px">New contact message</h1><p><strong>From:</strong> ${escapeHtml(name)}</p><p><strong>Email:</strong> <a href="mailto:${escapeHtml(input.email)}">${escapeHtml(input.email)}</a></p><hr style="border:0;border-top:1px solid #e5e7eb;margin:24px 0"><div style="white-space:pre-wrap;line-height:1.6">${escapeHtml(input.message)}</div></div>`;
-    await sendMail("contactfittingin@gmail.com", subject, html, "[contact-form]", `[contact-form] ${name} <${input.email}>: ${input.message}`, input.email);
+    await sendMail("browsegyms@gmail.com", subject, html, "[contact-form]", `[contact-form] ${name} <${input.email}>: ${input.message}`, input.email);
 }
 
 export const sendPasswordResetEmail: Mailer = async (to, resetUrl) => {
