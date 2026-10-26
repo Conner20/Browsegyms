@@ -6,7 +6,10 @@ const accountId = process.env.R2_ACCOUNT_ID?.trim();
 const accessKeyId = process.env.R2_ACCESS_KEY_ID?.trim();
 const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.trim();
 const bucket = process.env.R2_BUCKET_NAME?.trim();
-const publicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim().replace(/\/+$/, "");
+const configuredPublicBaseUrl = process.env.R2_PUBLIC_BASE_URL?.trim();
+const publicBaseUrl = configuredPublicBaseUrl
+    ? (/^https?:\/\//i.test(configuredPublicBaseUrl) ? configuredPublicBaseUrl : `https://${configuredPublicBaseUrl}`).replace(/\/+$/, "")
+    : undefined;
 
 export const isR2Configured = Boolean(
     accountId && accessKeyId && secretAccessKey && bucket && publicBaseUrl,
