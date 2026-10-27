@@ -1,9 +1,7 @@
 import { db } from "@/prisma/client";
 import { sha256Hex } from "@/lib/token";
-import { membershipChargeForPeriod, membershipPeriod, membershipTermsFromMetadata } from "@/lib/membership-attribution";
 
 export type ConversionReviewStatus = "purchased" | "not_found" | "check_later";
-export type ConversionReviewRowKind = "referral" | "membership_cycle";
 
 export type ConversionReviewRow = {
   id: string;
@@ -14,15 +12,11 @@ export type ConversionReviewRow = {
   clickedAt: string;
   status: ConversionReviewStatus;
   confirmedAt?: string;
-  rowKind: ConversionReviewRowKind;
+  rowKind: "referral";
   question: string;
-  periodIndex?: number;
-  periodStart?: string;
-  periodEnd?: string;
-  attributedAmount?: number;
 };
 
-const outcomeTypes = ["DAY_PASS_GYM_CONFIRMED", "MEMBERSHIP_GYM_CONFIRMED", "DAY_PASS_GYM_DECLINED", "MEMBERSHIP_GYM_DECLINED", "MEMBERSHIP_CYCLE_GYM_CONFIRMED", "MEMBERSHIP_GYM_ENDED"];
+const outcomeTypes = ["DAY_PASS_GYM_CONFIRMED", "MEMBERSHIP_GYM_CONFIRMED", "DAY_PASS_GYM_DECLINED", "MEMBERSHIP_GYM_DECLINED"];
 
 export async function getConversionReview(rawToken: string) {
   const link = await db.gymConversionReviewLink.findFirst({
@@ -90,50 +84,8 @@ export async function getConversionReview(rawToken: string) {
       newerReferralOffers.add(key);
       return row.status !== "check_later" || !hasNewerAttempt;
     })
-    .map(({ optionKey: _optionKey, startsNewAttempt: _startsNewAttempt, ...row }) => row);
+    .map(row => ({ id: row.id, sourceClickId: row.sourceClickId, email: row.email, claimType: row.claimType, offer: row.offer, clickedAt: row.clickedAt, status: row.status, confirmedAt: row.confirmedAt, rowKind: row.rowKind, question: row.question }));
 
-  const clickById = new Map(clicks.map(click => [click.id, click]));
-  const emailByClickId = new Map(candidates.map(row => [row.sourceClickId, row.email]));
-  const cycleRows: ConversionReviewRow[] = [];
-  const initialMembershipConfirmations = events.filter(event => event.eventType === "MEMBERSHIP_GYM_CONFIRMED");
-  const today = new Date();
-  for (const confirmation of initialMembershipConfirmations) {
-    const metadata = confirmation.metadata as Record<string, unknown> | null;
-    const clickId = typeof metadata?.claimClickId === "string" ? metadata.claimClickId : "";
-    const startDate = typeof metadata?.membershipStartDate === "string" ? metadata.membershipStartDate : "";
-    const click = clickById.get(clickId);
-    const email = emailByClickId.get(clickId);
-    const terms = membershipTermsFromMetadata(click?.metadata);
-    if (!click || !email || !terms || !startDate) continue;
-    for (let periodIndex = 1; periodIndex <= 600; periodIndex += 1) {
-      const period = membershipPeriod(terms, startDate, periodIndex);
-      if (!period || period.due > today) break;
-      const id = `membership-cycle:${clickId}:${periodIndex}`;
-      const outcome = outcomes.get(id);
-      const ended = outcome?.eventType === "MEMBERSHIP_GYM_ENDED";
-      const charge = membershipChargeForPeriod(terms, startDate, periodIndex);
-      if (!charge) break;
-      if (period.contractEnds && charge.total <= 0) break;
-      cycleRows.push({
-        id,
-        sourceClickId: clickId,
-        email,
-        claimType: "Membership",
-        offer: terms.name || "Membership",
-        clickedAt: period.due.toISOString(),
-        status: outcome?.eventType === "MEMBERSHIP_CYCLE_GYM_CONFIRMED" ? "purchased" : ended ? "not_found" : "check_later",
-        confirmedAt: outcome?.createdAt.toISOString(),
-        rowKind: "membership_cycle",
-        question: "Active?",
-        periodIndex,
-        periodStart: period.start,
-        periodEnd: period.end,
-        attributedAmount: charge.total,
-      });
-      if (ended) break;
-    }
-  }
-
-  const rows = [...referralRows, ...cycleRows].sort((a, b) => b.clickedAt.localeCompare(a.clickedAt)).slice(0, 5_000);
+  const rows = referralRows.slice(0, 5_000);
   return { linkId: link.id, gymId: link.gymId, gymName: link.gym.name, expiresAt: link.expiresAt.toISOString(), rows };
 }

@@ -45,15 +45,15 @@ export default function GymConversionReview({ token, gymName, expiresAt, initial
       <header className="border-b border-white/10 p-6 sm:p-8">
         <BrandIcon />
         <h1 className="mt-2 text-3xl font-black">Confirm referrals for {gymName}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected day pass or membership, or whether their existing membership is still active.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected day pass or membership.</p>
         <p className="mt-3 text-xs text-white/40">This secure link expires {new Date(expiresAt).toLocaleString()}.</p>
       </header>
 
       {pendingRows.length ? <>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-white/45"><tr><th className="p-4">User email</th><th>Offer</th><th>Clicked</th><th className="pr-4">Gym response</th></tr></thead>
-            <tbody>{pendingRows.map(row => <tr key={row.id} className="border-t border-white/10"><td className="p-4 font-semibold">{row.email}</td><td className="font-semibold">{row.offer}</td><td>{row.rowKind === "membership_cycle" && row.periodStart ? new Date(`${row.periodStart}T00:00:00`).toLocaleDateString() : new Date(row.clickedAt).toLocaleString()}</td><td className="py-3 pr-4"><p className="mb-2 text-xs font-semibold text-white/60">{row.question}</p><div className="flex gap-1.5">{choices.map(choice => <button key={choice.value} type="button" onClick={() => update(row.id, choice.value)} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${decisions[row.id] === choice.value ? "green-button-ui border-[#22c55e]" : "border-white/15 text-white/65 hover:border-white/40"}`}>{choice.label}</button>)}</div></td></tr>)}</tbody>
+            <thead className="text-left text-xs uppercase tracking-wide text-white/45"><tr><th className="p-4">User email</th><th>Offer</th><th>Clicked</th><th className="pr-4">Purchased?</th></tr></thead>
+            <tbody>{pendingRows.map(row => <tr key={row.id} className="border-t border-white/10"><td className="p-4 font-semibold">{row.email}</td><td className="font-semibold">{row.offer}</td><td>{new Date(row.clickedAt).toLocaleString()}</td><td className="py-3 pr-4"><div className="flex gap-1.5">{choices.map(choice => <button key={choice.value} type="button" onClick={() => update(row.id, choice.value)} className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${decisions[row.id] === choice.value ? "green-button-ui border-[#22c55e]" : "border-white/15 text-white/65 hover:border-white/40"}`}>{choice.label}</button>)}</div></td></tr>)}</tbody>
           </table>
         </div>
         <footer className="border-t border-white/10 p-6 sm:p-8">
