@@ -18,12 +18,12 @@ export function claimClickRequests(sheets: DataSheet[], sheetId: number, previou
   return [
     cells(0, 0, [[text("Gym"), text(selected)]]),
     cells(1, 0, [[text("Users who clicked Claim Day Pass or Claim Membership")]]),
-    cells(2, 0, [[{ userEnteredValue: { formulaValue: `=IF($B$1="Select a gym",IF(COUNT($X$6:$X$${end})=0,"No claim clicks yet.","Showing all gyms — most recently clicked first."),IF(COUNTIF($AH$6:$AH$${end},${id})=0,"No claim clicks for this gym.","Showing claim clicks for "&$B$1))` } }]]),
+    cells(2, 0, [[{ userEnteredValue: { formulaValue: `=IF($B$1="Select a gym",IF(COUNT($Y$6:$Y$${end})=0,"No claim clicks yet.","Showing all gyms — most recently clicked first."),IF(COUNTIF($AD$6:$AD$${end},${id})=0,"No claim clicks for this gym.","Showing claim clicks for "&$B$1))` } }]]),
     cells(0, 36, options.map(row => row.map(text))),
-    cells(4, 0, [source.values[0].slice(0, 13).map(value => text(String(value)))]),
-    cells(5, 0, [[{ userEnteredValue: { formulaValue: `=IFERROR(SORT(IF($B$1="Select a gym",FILTER($U$6:$AG$${end},$X$6:$X$${end}<>""),FILTER($U$6:$AG$${end},$AH$6:$AH$${end}=${id})),4,FALSE),"")` } }]]),
+    cells(4, 0, [source.values[0].slice(0, 9).map(value => text(String(value)))]),
+    cells(5, 0, [[{ userEnteredValue: { formulaValue: `=IFERROR(SORT(IF($B$1="Select a gym",FILTER($U$6:$AC$${end},$Y$6:$Y$${end}<>""),FILTER($U$6:$AC$${end},$AD$6:$AD$${end}=${id})),5,FALSE),"")` } }]]),
     { setDataValidation: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 }, rule: { condition: { type: "ONE_OF_RANGE", values: [{ userEnteredValue: `=$AK$1:$AK$${options.length}` }] }, strict: true, showCustomUi: true } } },
-    { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 13, endIndex: 38 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
+    { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 9, endIndex: 38 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
     { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 3, startColumnIndex: 0, endColumnIndex: 6 }, cell: { userEnteredFormat: { textFormat: { fontFamily: "Arial", fontSize: 11 }, wrapStrategy: "OVERFLOW_CELL" } }, fields: "userEnteredFormat" } },
     { repeatCell: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 1, endColumnIndex: 2 }, cell: { userEnteredFormat: { backgroundColor: { red: 0.94, green: 0.99, blue: 0.96 }, textFormat: { bold: true } } }, fields: "userEnteredFormat" } },
   ];

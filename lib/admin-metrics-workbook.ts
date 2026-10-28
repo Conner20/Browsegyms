@@ -66,21 +66,18 @@ export async function buildAdminMetricsWorkbook() {
     const count = (type: string) => scopedEvents.filter(event => event.eventType === type).length;
     const claims = (prefix: "DAY_PASS" | "MEMBERSHIP") => {
       const clickType = `${prefix}_CLICKED` as "DAY_PASS_CLICKED" | "MEMBERSHIP_CLICKED";
-      const clicks = new Set(scopedEvents.filter(event => event.eventType === clickType).map(event => event.id));
-      // Responses can arrive after the click; scope purchases by the original click, as the dashboard does.
+      const scopedClicks = scopedEvents.filter(event => event.eventType === clickType), clicks = new Set(scopedClicks.map(event => event.id));
       const keys = (suffix: string) => new Set(events.filter(event => event.eventType === `${prefix}_${suffix}`).map(event => confirmedClickId(event, clickType)));
       const confirmed = keys("GYM_CONFIRMED"), declined = keys("GYM_DECLINED");
-      return `${clicks.size} / ${[...confirmed].filter(id => clicks.has(id)).length} / ${[...keys("CLAIM_CONFIRMED")].filter(id => clicks.has(id) && !confirmed.has(id) && !declined.has(id)).length}`;
+      const confirmedClicks = scopedClicks.filter(click => confirmed.has(click.id));
+      const userReported = [...keys("CLAIM_CONFIRMED")].filter(id => clicks.has(id) && !confirmed.has(id) && !declined.has(id)).length;
+      return [new Set(scopedClicks.map(actor)).size, scopedClicks.length, new Set(confirmedClicks.map(actor)).size, confirmedClicks.length, userReported];
     };
-    return [
-      `${scopedUsers.length} / ${scopedUsers.filter(user => user.role === "GYM").length}`,
-      `${new Set(visitEvents.map(actor)).size} / ${new Set(visitEvents.map(event => event.visitId)).size}`,
-      claims("DAY_PASS"), claims("MEMBERSHIP"),
-      `${count("DAY_PASS_SIGNUP")} / ${count("MEMBERSHIP_SIGNUP")}`,
-    ];
+    const dayPass = claims("DAY_PASS"), membership = claims("MEMBERSHIP");
+    return [scopedUsers.length, scopedUsers.filter(user => user.role === "GYM").length, new Set(visitEvents.map(event => event.visitorId)).size, new Set(visitEvents.map(event => event.visitId)).size, count("GYM_OPENED"), count("DIRECTIONS_CLICKED"), count("FAVORITE_ADDED"), count("COMPARE_ADDED"), dayPass[0], dayPass[1], dayPass[2], dayPass[3], dayPass[4], count("DAY_PASS_SIGNUP"), membership[0], membership[1], membership[2], membership[3], membership[4], count("MEMBERSHIP_SIGNUP")];
   };
   const overviewPeriods = [0, 7, 30, 365].map(overviewForPeriod);
-  ["Total Users / Gym Users", "Visitors / Visits", "Day-pass Clicks / Confirmed / User Reported", "Membership Clicks / Confirmed / User Reported", "Day-pass Signups / Membership Signups"].forEach((label, index) => summary.addRow([label, ...overviewPeriods.map(period => period[index])]));
+  ["Total users", "Gym users", "Unique visitors", "Visits", "Gym profiles opened", "Directions clicks", "Favorites added", "Gyms compared", "Unique Claim Day Pass clickers", "Claim Day Pass clicks", "Users who got a day pass", "Gym-confirmed day-pass purchases", "User-reported day-pass purchases", "Signups after day-pass click", "Unique Claim Membership clickers", "Claim Membership clicks", "Users who got a membership", "Gym-confirmed membership purchases", "User-reported membership purchases", "Signups after membership click"].forEach((label, index) => summary.addRow([label, ...overviewPeriods.map(period => period[index])]));
   for (const column of [3, 4, 5]) summary.getColumn(column).hidden = true;
   formatSheet(summary);
 
@@ -106,13 +103,11 @@ export async function buildAdminMetricsWorkbook() {
   for (const [clickId,event] of resolvedDayPasses) { const userId=userFor(event)||events.find(item=>item.id===clickId)?.userId;if(userId&&byUser.has(userId))byUser.get(userId)!.dayConfirmIds.add(clickId); }
   for (const [clickId,event] of resolvedMemberships) { const userId=userFor(event)||events.find(item=>item.id===clickId)?.userId;if(userId&&byUser.has(userId))byUser.get(userId)!.memberConfirmIds.add(clickId); }
   const userSheet = workbook.addWorksheet("Users");
-  userSheet.columns = ["Email", "Status", "Deleted at", "Role", "Admin", "Gym", "Created", "Email verified", "Last active", "Day-pass clicks", "Day-pass confirms", "Membership clicks", "Membership confirms", "User-reported day passes", "User-reported memberships", "Purchase source"].map(header => ({ header, key: header }));
+  userSheet.columns = ["Email", "Status", "Deleted at", "Role", "Admin", "Gym", "Created", "Email verified", "Last active", "Day-pass clicks", "Day-pass confirms", "Membership clicks", "Membership confirms", "User-reported day passes", "User-reported memberships"].map(header => ({ header, key: header }));
   for (const user of users) {
     const metrics = byUser.get(user.id)!;
     const reportedDayPasses = userReports(user.id, "DAY_PASS", dayPassGymResponseIds), reportedMemberships = userReports(user.id, "MEMBERSHIP", membershipGymResponseIds);
-    const hasGymConfirmed = metrics.dayConfirmIds.size + metrics.memberConfirmIds.size > 0, hasUserReported = reportedDayPasses + reportedMemberships > 0;
-    const purchaseSource = hasGymConfirmed && hasUserReported ? "Mixed" : hasGymConfirmed ? "Gym confirmed" : hasUserReported ? "User reported" : "No purchases";
-    userSheet.addRow({ Email: user.email ?? "", Status: user.deletedAt ? "Deleted" : "Active", "Deleted at": user.deletedAt?.toISOString() ?? "", Role: user.role ?? "", Admin: !user.deletedAt && getUserAdminStatus(user) ? "Yes" : "No", Gym: user.gymAccesses.map(access => access.gym.name).join(", "), Created: user.createdAt.toISOString(), "Email verified": user.emailVerified?.toISOString() ?? "", "Last active": [user.lastLoginAt, ...events.filter(event => event.userId === user.id).map(event => event.createdAt)].filter((date): date is Date => Boolean(date)).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() ?? "", "Day-pass clicks": metrics.dayClicks, "Day-pass confirms": metrics.dayConfirmIds.size, "Membership clicks": metrics.memberClicks, "Membership confirms": metrics.memberConfirmIds.size, "User-reported day passes": reportedDayPasses, "User-reported memberships": reportedMemberships, "Purchase source": purchaseSource });
+    userSheet.addRow({ Email: user.email ?? "", Status: user.deletedAt ? "Deleted" : "Active", "Deleted at": user.deletedAt?.toISOString() ?? "", Role: user.role ?? "", Admin: !user.deletedAt && getUserAdminStatus(user) ? "Yes" : "No", Gym: user.gymAccesses.map(access => access.gym.name).join(", "), Created: user.createdAt.toISOString(), "Email verified": user.emailVerified?.toISOString() ?? "", "Last active": [user.lastLoginAt, ...events.filter(event => event.userId === user.id).map(event => event.createdAt)].filter((date): date is Date => Boolean(date)).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() ?? "", "Day-pass clicks": metrics.dayClicks, "Day-pass confirms": metrics.dayConfirmIds.size, "Membership clicks": metrics.memberClicks, "Membership confirms": metrics.memberConfirmIds.size, "User-reported day passes": reportedDayPasses, "User-reported memberships": reportedMemberships });
   }
   formatSheet(userSheet);
 
@@ -129,13 +124,13 @@ export async function buildAdminMetricsWorkbook() {
   formatSheet(gymSheet);
 
   const claimSheet = workbook.addWorksheet("Claim activity log");
-  claimSheet.columns = ["Type", "Email", "Gym", "Offer", "Clicked at", "Gym response", "Confirmed by user", "Confirmed by gym", "Purchase source", "Confirmation timestamp", "User confirmed at", "Gym confirmed at", "Gym ID", "Claim ID", "User response"].map(header => ({ header, key: header }));
-  for (const click of events.filter(event => ["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED"].includes(event.eventType)).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) { const prefix = click.eventType === "DAY_PASS_CLICKED" ? "DAY_PASS" : "MEMBERSHIP",nextClick=events.find(event=>event.eventType===click.eventType&&event.gymId===click.gymId&&behaviorActor(event)===behaviorActor(click)&&event.createdAt>click.createdAt),userOutcome=[...events].reverse().find(event=>[`${prefix}_CLAIM_CONFIRMED`,`${prefix}_CLAIM_DECLINED`].includes(event.eventType)&&event.gymId===click.gymId&&behaviorActor(event)===behaviorActor(click)&&event.createdAt>=click.createdAt&&(!nextClick||event.createdAt<nextClick.createdAt)),userConfirmation=userOutcome?.eventType===`${prefix}_CLAIM_CONFIRMED`?userOutcome:null,gymConfirmation=events.find(event=>event.eventType===`${prefix}_GYM_CONFIRMED`&&event.visitId===`gym-confirm:${click.id}`),gymDeclined=events.some(event=>event.eventType===`${prefix}_GYM_DECLINED`&&event.visitId===`gym-confirm:${click.id}`),purchaseSource=gymConfirmation?"Gym confirmed":userConfirmation?"User reported":"Unconfirmed",metadata=click.metadata as Record<string,unknown>|null,offerName=prefix==="MEMBERSHIP"&&typeof metadata?.optionName==="string"&&metadata.optionName.trim()?metadata.optionName.trim():prefix==="DAY_PASS"&&typeof metadata?.durationDays==="number"?`${metadata.durationDays}-day pass`:prefix==="MEMBERSHIP"?"Membership":"Day pass",offerPrice=typeof metadata?.price==="number"?` · $${metadata.price.toFixed(2)}`:"",gymResponse=gymConfirmation?"Purchased":gymDeclined?"Not Purchased":""; claimSheet.addRow({ Type: prefix === "DAY_PASS" ? "Day pass" : "Membership", Email: click.user?.email ?? visitorEmails.get(click.visitorId) ?? "", Gym: click.gym?.name ?? "Deleted gym", Offer:`${offerName}${offerPrice}`, "Clicked at": click.createdAt.toISOString(), "Gym response":gymResponse, "Confirmed by user": userConfirmation ? "Yes" : "No", "Confirmed by gym": gymConfirmation ? "Yes" : "No", "Purchase source":purchaseSource, "Confirmation timestamp": gymConfirmation?.createdAt.toISOString() ?? userConfirmation?.createdAt.toISOString() ?? "", "User confirmed at": userConfirmation?.createdAt.toISOString() ?? "", "Gym confirmed at": gymConfirmation?.createdAt.toISOString() ?? "", "Gym ID": click.gymId ?? "", "Claim ID": click.id, "User response": userOutcome?.eventType===`${prefix}_CLAIM_CONFIRMED`?"Confirmed":userOutcome?.eventType===`${prefix}_CLAIM_DECLINED`?"Declined":"Unsure" }); }
+  claimSheet.columns = ["Type", "Email", "Gym", "Offer", "Clicked at", "User response", "User responded at", "Gym response", "Gym responded at", "Gym ID", "Claim ID"].map(header => ({ header, key: header }));
+  for (const click of events.filter(event => ["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED"].includes(event.eventType)).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) { const prefix = click.eventType === "DAY_PASS_CLICKED" ? "DAY_PASS" : "MEMBERSHIP",nextClick=events.find(event=>event.eventType===click.eventType&&event.gymId===click.gymId&&behaviorActor(event)===behaviorActor(click)&&event.createdAt>click.createdAt),userOutcome=[...events].reverse().find(event=>[`${prefix}_CLAIM_CONFIRMED`,`${prefix}_CLAIM_DECLINED`].includes(event.eventType)&&event.gymId===click.gymId&&behaviorActor(event)===behaviorActor(click)&&event.createdAt>=click.createdAt&&(!nextClick||event.createdAt<nextClick.createdAt)),gymConfirmation=events.find(event=>event.eventType===`${prefix}_GYM_CONFIRMED`&&event.visitId===`gym-confirm:${click.id}`),gymDecline=events.find(event=>event.eventType===`${prefix}_GYM_DECLINED`&&event.visitId===`gym-confirm:${click.id}`),gymOutcome=gymConfirmation??gymDecline,metadata=click.metadata as Record<string,unknown>|null,offerName=prefix==="MEMBERSHIP"&&typeof metadata?.optionName==="string"&&metadata.optionName.trim()?metadata.optionName.trim():prefix==="DAY_PASS"&&typeof metadata?.durationDays==="number"?`${metadata.durationDays}-day pass`:prefix==="MEMBERSHIP"?"Membership":"Day pass",offerPrice=typeof metadata?.price==="number"?` · $${metadata.price.toFixed(2)}`:""; claimSheet.addRow({ Type: prefix === "DAY_PASS" ? "Day pass" : "Membership", Email: click.user?.email ?? visitorEmails.get(click.visitorId) ?? "", Gym: click.gym?.name ?? "Deleted gym", Offer:`${offerName}${offerPrice}`, "Clicked at": click.createdAt.toISOString(), "User response": userOutcome?.eventType===`${prefix}_CLAIM_CONFIRMED`?"Confirmed":userOutcome?.eventType===`${prefix}_CLAIM_DECLINED`?"Declined":"Unsure", "User responded at":userOutcome?.createdAt.toISOString()??"", "Gym response":gymConfirmation?"Purchased":gymDecline?"Not Purchased":"", "Gym responded at":gymOutcome?.createdAt.toISOString()??"", "Gym ID": click.gymId ?? "", "Claim ID": click.id }); }
   formatSheet(claimSheet);
   const gymClicks = workbook.addWorksheet("Gym claim clicks");
-  gymClicks.columns = ["Gym name", "User email", "Offer", "Clicked", "Gym response", "Gym confirmed at", "Type", "Confirmed by user", "Confirmed by gym", "Purchase source", "Confirmation timestamp", "User confirmed at", "User response", "Gym ID", "Claim ID"].map(header => ({ header, key: header }));
+  gymClicks.columns = ["Gym name", "User email", "Type", "Offer", "Clicked", "User response", "User responded at", "Gym response", "Gym responded at", "Gym ID", "Claim ID"].map(header => ({ header, key: header }));
   claimSheet.eachRow((row, index) => {
-    if (index > 1) gymClicks.addRow(["Gym", "Email", "Offer", "Clicked at", "Gym response", "Gym confirmed at", "Type", "Confirmed by user", "Confirmed by gym", "Purchase source", "Confirmation timestamp", "User confirmed at", "User response", "Gym ID", "Claim ID"].map(key => row.getCell(key).value));
+    if (index > 1) gymClicks.addRow(["Gym", "Email", "Type", "Offer", "Clicked at", "User response", "User responded at", "Gym response", "Gym responded at", "Gym ID", "Claim ID"].map(key => row.getCell(key).value));
   });
 
   const opportunitySheet=workbook.addWorksheet("Unclaimed gym opportunity");
@@ -168,24 +163,6 @@ export async function buildAdminMetricsWorkbook() {
     sheet.columns = headers.map(header => ({ header, key: header }));
     return sheet;
   };
-  const count = (type: string) => events.filter(event => event.eventType === type).length;
-  const unique = (type: string) => new Set(events.filter(event => event.eventType === type).map(behaviorActor)).size;
-  const demand = addTable("Landing-page demand", ["Metric", "Value"]);
-  demand.addRows([
-    ["Unique visitors", new Set(events.map(event => event.visitorId)).size],
-    ["Visits", new Set(events.map(event => event.visitId)).size],
-    ["Gym profiles opened", count("GYM_OPENED")],
-    ["Directions clicks", count("DIRECTIONS_CLICKED")],
-    ["Favorites added", count("FAVORITE_ADDED")],
-    ["Gyms compared", count("COMPARE_ADDED")],
-    ["Unique Claim Day Pass clickers", unique("DAY_PASS_CLICKED")],
-    ["Users who got a day pass", unique("DAY_PASS_GYM_CONFIRMED")],
-    ["Signups after day-pass click", count("DAY_PASS_SIGNUP")],
-    ["Unique Claim Membership clickers", unique("MEMBERSHIP_CLICKED")],
-    ["Users who got a membership", unique("MEMBERSHIP_GYM_CONFIRMED")],
-    ["Signups after membership click", count("MEMBERSHIP_SIGNUP")],
-  ]);
-
   // Supply the actual cumulative chart series (daily distinct counts cannot be summed).
   const retainedDates = [...dailyMap.keys()].sort();
   const growth = addTable("User and demand growth", ["Date", "Users", "Unique visitors", "Gym profiles opened", "Unique day-pass clickers", "Confirmed day passes", "Unique membership clickers", "Confirmed memberships"]);
@@ -203,10 +180,10 @@ export async function buildAdminMetricsWorkbook() {
     growth.addRow([date, users.filter(user => !user.deletedAt && day(user.createdAt) <= date).length, trendVisitors.size, opens, trendDay.size, trendDayConfirmed.size, trendMember.size, trendMemberConfirmed.size]);
   }
 
-  const revenueHeaders = ["Total revenue", "Day-pass revenue", "Membership revenue", "Paid charges", "Average charge"];
+  const revenueHeaders = ["Total revenue", "Day-pass revenue", "Membership revenue", "Paid charges"];
   const revenueTotals = (records: typeof financialRecords) => {
     const total = records.reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100;
-    return [total, records.filter(record => record.type === "Day pass").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.filter(record => record.type === "Membership").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.length, records.length ? total / records.length : 0];
+    return [total, records.filter(record => record.type === "Day pass").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.filter(record => record.type === "Membership").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.length];
   };
   const revenueByGym = addTable("Revenue by gym", ["Gym", "Customers supplied", ...revenueHeaders, "Gym ID"]);
   const revenueGymIds = new Set([...gyms.map(gym => gym.id), ...financialRecords.map(record => record.event.gymId ?? "deleted")]);
@@ -217,7 +194,7 @@ export async function buildAdminMetricsWorkbook() {
     if (totals[0] > 0) gymTotals.push(totals[0]);
     revenueByGym.addRow([gymById.get(id)?.name ?? "Deleted gym", new Set(records.map(record => record.email.toLowerCase() || "Unknown user")).size, ...totals, id]);
   }
-  const spending = addTable("User spending", ["User email", "Total spent", "Day-pass spending", "Membership spending", "Confirmed payments", "Average payment"]);
+  const spending = addTable("User spending", ["User email", "Total spent", "Day-pass spending", "Membership spending", "Confirmed payments"]);
   for (const email of new Set(financialRecords.map(record => record.email.toLowerCase() || "Unknown user"))) {
     spending.addRow([email, ...revenueTotals(financialRecords.filter(record => (record.email.toLowerCase() || "Unknown user") === email))]);
   }
@@ -271,17 +248,17 @@ export async function buildAdminMetricsWorkbook() {
   }
   // Join tables at their native grain: one account/email or one stable gym ID.
   const spendByEmail = new Map<string, ExcelJS.CellValue[]>();
-  spending.eachRow((row, index) => { if (index > 1) spendByEmail.set(row.getCell(1).text.trim().toLowerCase(), Array.from({ length: 5 }, (_, column) => row.getCell(column + 2).value)); });
-  const spendingHeaders = ["Total spent", "Day-pass spending", "Membership spending", "Confirmed payments", "Average payment"];
-  spendingHeaders.forEach((header, index) => { userSheet.getCell(1, 17 + index).value = header; });
+  spending.eachRow((row, index) => { if (index > 1) spendByEmail.set(row.getCell(1).text.trim().toLowerCase(), Array.from({ length: 4 }, (_, column) => row.getCell(column + 2).value)); });
+  const spendingHeaders = ["Total spent", "Day-pass spending", "Membership spending", "Confirmed payments"];
+  spendingHeaders.forEach((header, index) => { userSheet.getCell(1, 16 + index).value = header; });
   userSheet.eachRow((row, index) => {
     if (index === 1) return;
     const email = row.getCell(1).text.trim().toLowerCase();
-    const totals = spendByEmail.get(email) ?? [0, 0, 0, 0, 0];
-    totals.forEach((value, column) => { row.getCell(17 + column).value = value; });
+    const totals = spendByEmail.get(email) ?? [0, 0, 0, 0];
+    totals.forEach((value, column) => { row.getCell(16 + column).value = value; });
     spendByEmail.delete(email);
   });
-  for (const [email, totals] of spendByEmail) userSheet.addRow([email, "Historical spending (no matching account)", ...Array(14).fill(""), ...totals]);
+  for (const [email, totals] of spendByEmail) userSheet.addRow([email, "Historical spending (no matching account)", ...Array(13).fill(""), ...totals]);
 
   const combinedGyms = addTable("Gyms", ["Gym", "Claimed", "Owner", "Claimed when", "Assigned by", "Last updated", ...Array.from({ length: 10 }, (_, i) => gymSheet.getRow(1).getCell(i + 2).text), "Gym ID"]);
   gyms.forEach((gym, index) => {
@@ -297,26 +274,25 @@ export async function buildAdminMetricsWorkbook() {
     row.customers.add(typeof metadata?.customerEmail === "string" && metadata.customerEmail.trim() ? metadata.customerEmail.trim().toLowerCase() : actor(event));
     confirmedPurchasesByGym.set(id, row);
   }
-  const combinedFinancials = addTable("Gym financials", ["Gym", "Claimed", "Purchase source", "Customers", "Total purchases", "Day-pass purchases", "Membership purchases", "Confirmed total revenue", "Confirmed day-pass revenue", "Confirmed membership revenue", "Paid charges", "Average charge", "Estimated day-pass revenue", "Estimated membership revenue", "Estimated revenue opportunity", "Gym ID"]);
+  const combinedFinancials = addTable("Gym financials", ["Gym", "Claimed", "Purchase source", "Customers", "Total purchases", "Day-pass purchases", "Membership purchases", "Confirmed total revenue", "Confirmed day-pass revenue", "Confirmed membership revenue", "Paid charges", "Estimated day-pass revenue", "Estimated membership revenue", "Estimated revenue opportunity", "Gym ID"]);
   revenueByGym.eachRow((row, index) => {
     if (index === 1) return;
-    const id = row.getCell(8).text, gym = gymById.get(id), claimed = Boolean(gym?.access.length), confirmed = confirmedPurchasesByGym.get(id), opportunity = opportunities.get(id);
+    const id = row.getCell(7).text, gym = gymById.get(id), claimed = Boolean(gym?.access.length), confirmed = confirmedPurchasesByGym.get(id), opportunity = opportunities.get(id);
     const dayPassPurchases = claimed ? confirmed?.dayPass ?? 0 : opportunity?.dayPassPurchases ?? 0;
     const membershipPurchases = claimed ? confirmed?.membership ?? 0 : opportunity?.membershipPurchases ?? 0;
     const totalPurchases = dayPassPurchases + membershipPurchases;
     combinedFinancials.addRow([
       row.getCell(1).value, claimed ? "Yes" : "No", totalPurchases ? (claimed ? "Gym confirmed" : "User reported") : "No purchases",
       claimed ? confirmed?.customers.size ?? 0 : opportunity?.customers.size ?? 0, totalPurchases, dayPassPurchases, membershipPurchases,
-      ...Array.from({ length: 5 }, (_, i) => row.getCell(i + 3).value),
+      ...Array.from({ length: 4 }, (_, i) => row.getCell(i + 3).value),
       claimed ? 0 : opportunity?.dayPassEstimated ?? 0, claimed ? 0 : opportunity?.membershipEstimated ?? 0, claimed ? 0 : opportunity?.estimated ?? 0, id,
     ]);
   });
-  combinedFinancials.getColumn(16).hidden = true;
+  combinedFinancials.getColumn(15).hidden = true;
 
   summary.getCell("F1").value = "Period";
   summary.getCell("G1").value = "Meaning";
-  summary.addRow(["Landing-page demand", "", "", "", "", "All time"]);
-  demand.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time"]); });
+  summary.eachRow((row, index) => { if (index > 1) row.getCell(6).value = "Selectable"; });
   summary.addRow(["Financial metrics", "", "", "", "", "All time"]);
   financial.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time", row.getCell(3).value]); });
   const tabOrder = ["Overview", "Users", "User and demand growth", "Gyms", "Gym claim clicks", "Gym financials", "Financial growth", "Revenue by offer", "Popular cities", "Filter usage"];

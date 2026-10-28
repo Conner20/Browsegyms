@@ -166,7 +166,7 @@ export async function syncAdminMetricsToGoogleSheets() {
     const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === CLAIM_CLICKS_TITLE ? 38 : sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
     const tableRows = sheet.title === "Financial growth" ? new Set(sheet.values.slice(1).map(row => row[1])).size + 1 : sheet.rows;
-    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 13 : sheet.title === "Financial growth" ? 5 : sheet.title === "Overview" ? 4 : sheet.columns;
+    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 9 : sheet.title === "Financial growth" ? 5 : sheet.title === "Overview" ? 4 : sheet.columns;
     const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, tableRows), startColumnIndex: 0, endColumnIndex: tableColumns };
     return [
       { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.title === CLAIM_CLICKS_TITLE ? 5 : sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
