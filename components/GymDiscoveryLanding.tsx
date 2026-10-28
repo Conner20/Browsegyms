@@ -1085,24 +1085,24 @@ export default function GymDiscoveryLanding({
           {managedGymId && (
             <><button
               type="button"
-              aria-label="My Listing"
-              title="My Listing"
+              aria-label="Listing"
+              title="Listing"
               onClick={() => window.location.assign("/gym-listing/edit")}
               className="filter-pill landing-toolbar-button landing-action-listing"
             >
               <SquarePen className="h-4 w-4" />
               <span className="landing-action-label landing-listing-label">
-                My Listing
+                Listing
               </span>
             </button><button
               type="button"
-              aria-label="My Referrals"
-              title="My Referrals"
+              aria-label="Referrals"
+              title="Referrals"
               onClick={() => window.location.assign("/referrals")}
               className="filter-pill landing-toolbar-button landing-action-referrals"
             >
               <ClipboardCheck className="h-4 w-4" />
-              <span className="landing-action-label">My Referrals</span>
+              <span className="landing-action-label">Referrals</span>
             </button></>
           )}
           {isAdmin && (
