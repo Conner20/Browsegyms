@@ -1486,45 +1486,25 @@ export default function GymDiscoveryLanding({
           maxRadius={maxDistance}
           maxLimit={maxPrice}
           resultCount={gyms.length}
-          setRadius={(n) => {
-            setRadius(n);
-            track("FILTER_CHANGED", {
-              metadata: { control: "Distance", value: n },
-            });
-          }}
-          setLimit={(n) => {
-            setLimit(n);
-            track("FILTER_CHANGED", {
-              metadata: {
-                control:
-                  pricingMode === "membership"
-                    ? "Membership price"
-                    : "Day-pass price",
-                value: n,
-              },
-            });
-          }}
+          setRadius={setRadius}
+          setLimit={setLimit}
           filters={filters}
           equipmentFilters={equipmentFilters}
           amenityFilters={amenityFilters}
-          toggle={(f) =>
-            setFilters((a) => {
-              const on = !a.includes(f);
-              track("FILTER_CHANGED", { metadata: { filter: f, enabled: on } });
-              return on ? [...a, f] : a.filter((x) => x !== f);
-            })
-          }
-          setEquipmentFilters={(items) => {
-            const changed = [...equipmentFilters.filter(item => !items.includes(item)), ...items.filter(item => !equipmentFilters.includes(item))];
-            changed.forEach(filter => track("FILTER_CHANGED", { metadata: { control: "Equipment", filter, enabled: items.includes(filter) } }));
-            setEquipmentFilters(items);
-          }}
-          setAmenityFilters={(items) => {
-            const changed = [...amenityFilters.filter(item => !items.includes(item)), ...items.filter(item => !amenityFilters.includes(item))];
-            changed.forEach(filter => track("FILTER_CHANGED", { metadata: { control: "Amenities", filter, enabled: items.includes(filter) } }));
-            setAmenityFilters(items);
-          }}
+          toggle={(f) => setFilters((a) => a.includes(f) ? a.filter((x) => x !== f) : [...a, f])}
+          setEquipmentFilters={setEquipmentFilters}
+          setAmenityFilters={setAmenityFilters}
           close={() => setFilterOpen(false)}
+          apply={() => {
+            track("FILTER_APPLIED", { metadata: {
+              ...(radius < maxDistance ? { distance: radius } : {}),
+              ...(limit < maxPrice ? pricingMode === "membership" ? { membershipPrice: limit } : { dayPassPrice: limit } : {}),
+              gymTypes: filters.filter((filter) => GROUPS["Gym type"].includes(filter)),
+              equipment: equipmentFilters,
+              amenities: amenityFilters,
+            } });
+            setFilterOpen(false);
+          }}
           clear={() => {
             setFilters([]);
             setEquipmentFilters([]);
@@ -2976,6 +2956,7 @@ function Filters({
   setEquipmentFilters,
   setAmenityFilters,
   close,
+  apply,
   clear,
 }: {
   pricingMode: PricingMode;
@@ -2993,6 +2974,7 @@ function Filters({
   setEquipmentFilters: (items: string[]) => void;
   setAmenityFilters: (items: string[]) => void;
   close: () => void;
+  apply: () => void;
   clear: () => void;
 }) {
   return (
@@ -3056,7 +3038,7 @@ function Filters({
         </button>
         <button
           type="button"
-          onClick={close}
+          onClick={apply}
           className="filter-show-results h-11 rounded-full bg-[#22c55e] px-6 py-0 font-black text-black"
         >
           Show {resultCount} {resultCount === 1 ? "result" : "results"}

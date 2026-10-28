@@ -1,7 +1,6 @@
 import { EASTERN_TIMESTAMP_FORMAT, easternTimestampSerial, easternTimestampText } from "@/lib/metrics-reporting-time";
 import ExcelJS from "exceljs";
 import { getUserAdminStatus } from "@/lib/admin";
-import { filterCategory } from "@/lib/metrics-filter-category";
 import { db } from "@/prisma/client";
 import { membershipInitialCharge, membershipTermsFromMetadata } from "@/lib/membership-attribution";
 import { cleanMembershipOptions } from "@/lib/memberships";
@@ -140,10 +139,29 @@ export async function buildAdminMetricsWorkbook() {
   formatSheet(opportunitySheet);
 
   const filterSheet = workbook.addWorksheet("Filter usage");
-  filterSheet.columns = [{ header: "Filter category", key: "category" }, { header: "Unique users", key: "users" }];
-  const categories = ["Distance", "Day-pass price", "Membership price", "Gym type", "Equipment", "Amenities"];
-  const matchesFilterCategory = (event: ExportEvent, category: string) => event.eventType === "FILTER_CHANGED" && filterCategory(event.metadata) === category;
-  for (const category of categories) { const actors = new Set(events.filter(event => matchesFilterCategory(event, category)).map(behaviorActor)); filterSheet.addRow({ category, users: actors.size }); }
+  filterSheet.columns = [{ header: "Filter category", key: "category" }, { header: "Filter value", key: "value" }, { header: "Unique users", key: "users" }];
+  const appliedFilters = events.filter(event => event.eventType === "FILTER_APPLIED");
+  const median = (values: number[]) => { const sorted = [...values].sort((a, b) => a - b), middle = Math.floor(sorted.length / 2); return sorted.length ? sorted.length % 2 ? sorted[middle] : Math.round((sorted[middle - 1] + sorted[middle]) * 50) / 100 : null; };
+  const numericFilters = [{ category: "Distance", field: "distance", unit: "miles" }, { category: "Day-pass price", field: "dayPassPrice", unit: "USD" }, { category: "Membership price", field: "membershipPrice", unit: "USD" }];
+  for (const { category, field, unit } of numericFilters) {
+    const selections = appliedFilters.flatMap(event => { const value = (event.metadata as Record<string, unknown> | null)?.[field]; return typeof value === "number" && Number.isFinite(value) ? [{ actor: behaviorActor(event), value }] : []; });
+    const selectedMedian = median(selections.map(selection => selection.value));
+    filterSheet.addRow({ category, value: selectedMedian === null ? "No submitted value" : unit === "USD" ? `Median: $${selectedMedian.toFixed(2)}` : `Median: ${selectedMedian.toFixed(1)} miles`, users: new Set(selections.map(selection => selection.actor)).size });
+  }
+  const categoricalFilters = [{ category: "Gym type", field: "gymTypes" }, { category: "Equipment", field: "equipment" }, { category: "Amenities", field: "amenities" }];
+  for (const { category, field } of categoricalFilters) {
+    const actorsByValue = new Map<string, Set<string>>(), categoryActors = new Set<string>();
+    for (const event of appliedFilters) {
+      const values = (event.metadata as Record<string, unknown> | null)?.[field];
+      if (!Array.isArray(values)) continue;
+      for (const value of new Set(values.filter((item): item is string => typeof item === "string").map(item => item.trim()).filter(Boolean))) {
+        const actor = behaviorActor(event), actors = actorsByValue.get(value) ?? new Set<string>();
+        actors.add(actor); actorsByValue.set(value, actors); categoryActors.add(actor);
+      }
+    }
+    filterSheet.addRow({ category, value: "All selected values", users: categoryActors.size });
+    for (const [value, actors] of [...actorsByValue].sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))) if (actors.size > 0) filterSheet.addRow({ category, value, users: actors.size });
+  }
   formatSheet(filterSheet);
 
   const citySheet = workbook.addWorksheet("Popular cities");
