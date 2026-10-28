@@ -23,6 +23,13 @@ export async function PATCH(req: Request, { params }: Context) {
     const claim = await db.gymClaim.findUnique({ where: { id }, select: { id: true, gymId: true, claimantId: true, status: true, proposedData: true, claimant: { select: { email: true } } } });
     if (!claim) return NextResponse.json({ message: "Claim not found." }, { status: 404 });
     if (claim.status !== "PENDING") return NextResponse.json({ message: "Claim has already been reviewed." }, { status: 409 });
+    if (status === "APPROVED") {
+        const conflictingAccess = await db.gymAccess.findFirst({
+            where: { OR: [{ userId: claim.claimantId, gymId: { not: claim.gymId } }, { gymId: claim.gymId, userId: { not: claim.claimantId } }] },
+            select: { id: true },
+        });
+        if (conflictingAccess) return NextResponse.json({ message: "Gym users can own only one listing, and each listing can have only one owner." }, { status: 409 });
+    }
     const reviewNote = typeof body.reviewNote === "string" ? body.reviewNote.trim() : null;
     let reviewedGymData: Prisma.GymUpdateInput | null = null;
     if (status === "APPROVED" && body.gymData && typeof body.gymData === "object") {

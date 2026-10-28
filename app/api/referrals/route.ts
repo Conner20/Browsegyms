@@ -1,23 +1,20 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { getReferralReviewAccess } from "@/lib/referral-review-access";
 import { NextResponse } from "next/server";
+import { authOptions } from "@/lib/auth";
 import { getConversionReview, type ConversionReviewStatus } from "@/lib/conversion-review";
+import { getReferralReviewAccess } from "@/lib/referral-review-access";
 import { membershipInitialCharge, membershipTermsFromMetadata } from "@/lib/membership-attribution";
 import { db } from "@/prisma/client";
 
-type Context = { params: Promise<{ token: string }> };
 const validStatuses = new Set<ConversionReviewStatus>(["purchased", "not_found"]);
 
-export async function PATCH(req: Request, { params }: Context) {
-  const { token } = await params;
+export async function PATCH(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ message: "Log in as the gym’s assigned owner to confirm referrals." }, { status: 401 });
-  const access = await getReferralReviewAccess(token, session.user.email);
-  if (access.status === "invalid") return NextResponse.json({ message: "This review link is invalid or has expired." }, { status: 404 });
+  const access = await getReferralReviewAccess(session.user.email);
   if (access.status !== "allowed") return NextResponse.json({ message: "Only the gym’s assigned owner can confirm referrals." }, { status: 403 });
-  const review = await getConversionReview(token);
-  if (!review) return NextResponse.json({ message: "This review link is invalid or has expired." }, { status: 404 });
+  const review = await getConversionReview(access.gymId);
+  if (!review) return NextResponse.json({ message: "Gym listing unavailable." }, { status: 404 });
   const body = await req.json().catch(() => ({}));
   const decisions: unknown[] = Array.isArray(body.decisions) ? body.decisions : [];
   const pendingRows = review.rows.filter(row => row.status === "check_later");
@@ -33,10 +30,7 @@ export async function PATCH(req: Request, { params }: Context) {
   const clicks = await db.landingEvent.findMany({ where: { id: { in: sourceClickIds }, gymId: review.gymId }, select: { id: true, eventType: true, visitorId: true, userId: true, metadata: true, createdAt: true } });
   const clickById = new Map(clicks.map(click => [click.id, click]));
   const saved = await db.$transaction(async tx => {
-    const owner = await tx.gymAccess.findFirst({
-      where: { gymId: review.gymId, user: { email: session.user!.email!.trim().toLowerCase(), emailVerified: { not: null }, deletedAt: null } },
-      select: { id: true },
-    });
+    const owner = await tx.gymAccess.findFirst({ where: { gymId: review.gymId, user: { email: session.user!.email!.trim().toLowerCase(), role: "GYM", emailVerified: { not: null }, deletedAt: null } }, select: { id: true } });
     if (!owner) return false;
     for (const decision of normalized) {
       const row = allowedRows.get(decision.clickId)!;
@@ -53,18 +47,9 @@ export async function PATCH(req: Request, { params }: Context) {
       const membershipCharge = membershipPurchaseDate && terms ? membershipInitialCharge(terms, membershipPurchaseDate) : null;
       const clickPrice = typeof clickMetadata?.price === "number" ? clickMetadata.price : 0;
       await tx.landingEvent.create({ data: {
-        eventType: desiredType,
-        visitorId: click.visitorId,
-        visitId,
-        path: "/referrals/review",
-        gymId: review.gymId,
-        userId: click.userId,
+        eventType: desiredType, visitorId: click.visitorId, visitId, path: "/referrals", gymId: review.gymId, userId: click.userId,
         metadata: {
-          claimClickId: click.id,
-          confirmedBy: "gym conversion link",
-          confirmedAt: new Date().toISOString(),
-          reviewLinkId: review.linkId,
-          customerEmail: row.email,
+          claimClickId: click.id, confirmedBy: "gym owner", confirmedAt: new Date().toISOString(), customerEmail: row.email,
           offerId: typeof clickMetadata?.optionId === "string" ? clickMetadata.optionId : null,
           offerName: typeof clickMetadata?.optionName === "string" ? clickMetadata.optionName : typeof clickMetadata?.durationDays === "number" ? `${clickMetadata.durationDays}-day pass` : membership ? "Membership" : "Day pass",
           ...(membershipPurchaseDate ? { membershipPurchaseDate } : {}),
@@ -76,5 +61,32 @@ export async function PATCH(req: Request, { params }: Context) {
     return true;
   });
   if (!saved) return NextResponse.json({ message: "Only the gym’s assigned owner can confirm referrals." }, { status: 403 });
+  return NextResponse.json({ ok: true });
+}
+
+export async function DELETE(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) return NextResponse.json({ message: "Log in as the gym’s assigned owner to remove a confirmation." }, { status: 401 });
+  const access = await getReferralReviewAccess(session.user.email);
+  if (access.status !== "allowed") return NextResponse.json({ message: "Only the gym’s assigned owner can remove confirmations." }, { status: 403 });
+  const body = await req.json().catch(() => ({}));
+  const clickId = typeof body.clickId === "string" ? body.clickId : "";
+  if (!clickId) return NextResponse.json({ message: "Select a confirmation to remove." }, { status: 400 });
+  const review = await getConversionReview(access.gymId);
+  const row = review?.rows.find(item => item.id === clickId && item.status === "purchased");
+  if (!review || !row) return NextResponse.json({ message: "That confirmed referral is no longer available." }, { status: 404 });
+  const removed = await db.$transaction(async tx => {
+    const owner = await tx.gymAccess.findFirst({ where: { gymId: review.gymId, user: { email: session.user!.email!.trim().toLowerCase(), role: "GYM", emailVerified: { not: null }, deletedAt: null } }, select: { id: true } });
+    if (!owner) return null;
+    return tx.landingEvent.deleteMany({
+      where: {
+        gymId: review.gymId,
+        visitId: `gym-confirm:${row.sourceClickId}`,
+        eventType: { in: ["DAY_PASS_GYM_CONFIRMED", "MEMBERSHIP_GYM_CONFIRMED"] },
+      },
+    });
+  });
+  if (!removed) return NextResponse.json({ message: "Only the gym’s assigned owner can remove confirmations." }, { status: 403 });
+  if (!removed.count) return NextResponse.json({ message: "That confirmation was already removed." }, { status: 404 });
   return NextResponse.json({ ok: true });
 }

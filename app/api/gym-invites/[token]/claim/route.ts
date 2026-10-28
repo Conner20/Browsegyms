@@ -1,4 +1,4 @@
-import { LEGACY_GYM_INVITE_COOKIE, PENDING_REFERRAL_COOKIE, LEGACY_REFERRAL_COOKIE } from "@/lib/brand-cookies";
+import { LEGACY_GYM_INVITE_COOKIE } from "@/lib/brand-cookies";
 import { getListingVerification } from "@/lib/listing-verification";
 import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
@@ -6,7 +6,6 @@ import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { cleanGymInput, validateCompleteGymInput } from "@/lib/gyms";
 import { PENDING_GYM_INVITE_COOKIE } from "@/lib/pending-gym-invite";
-import { sha256Hex } from "@/lib/token";
 import { db } from "@/prisma/client";
 import { Prisma } from "@prisma/client";
 
@@ -31,9 +30,7 @@ export async function PATCH(req: Request, { params }: Context) {
 
     try {
         await db.$transaction(async tx => {
-            const currentLink = invite.kind === "referral"
-                ? await tx.gymConversionReviewLink.findFirst({ where: { id: invite.id, tokenHash: sha256Hex(token), expiresAt: { gt: new Date() } } })
-                : await tx.gymInvite.findFirst({ where: { id: invite.id, tokenHash: sha256Hex(token), usedAt: null, expiresAt: { gt: new Date() } } });
+            const currentLink = await tx.gymInvite.findFirst({ where: { id: invite.id, tokenHash: invite.tokenHash, usedAt: null, expiresAt: { gt: new Date() } } });
             if (!currentLink) throw new Error("LINK_EXPIRED");
             const user = await tx.user.findUnique({ where: { email: accountEmail }, select: { id: true, emailVerified: true, deletedAt: true, gymAccesses: { select: { gymId: true } } } });
             if (!user?.emailVerified || user.deletedAt) throw new Error("VERIFIED_ACCOUNT_REQUIRED");
@@ -46,10 +43,10 @@ export async function PATCH(req: Request, { params }: Context) {
             await tx.gymAccess.upsert({ where: { gymId_userId: { gymId: invite.gymId, userId: user.id } }, create: { gymId: invite.gymId, userId: user.id }, update: {} });
             await tx.gymClaim.upsert({
                 where: { gymId_claimantId: { gymId: invite.gymId, claimantId: user.id } },
-                create: { gymId: invite.gymId, claimantId: user.id, status: "APPROVED", businessRole: "Gym representative", evidence: invite.kind === "referral" ? "Claimed through an administrator-issued referral link." : "Claimed through an administrator-issued verification link.", reviewedAt: claimedAt },
+                create: { gymId: invite.gymId, claimantId: user.id, status: "APPROVED", businessRole: "Gym representative", evidence: "Claimed through an administrator-issued verification link.", reviewedAt: claimedAt },
                 update: { status: "APPROVED", proposedData: editable, reviewedAt: claimedAt },
             });
-            if (invite.kind === "invite") await tx.gymInvite.update({ where: { id: invite.id }, data: { usedAt: claimedAt, proposedData: editable } });
+            await tx.gymInvite.update({ where: { id: invite.id }, data: { usedAt: claimedAt, proposedData: editable } });
         }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
     } catch (error) {
         if (error instanceof Error && error.message === "LINK_EXPIRED") return NextResponse.json({ message: "This verification link has expired or is no longer available." }, { status: 410 });
@@ -61,14 +58,7 @@ export async function PATCH(req: Request, { params }: Context) {
     }
 
     const cookieStore = await cookies();
-    const pendingReferral = invite.kind === "referral" ? token : cookieStore.get(PENDING_REFERRAL_COOKIE)?.value ?? cookieStore.get(LEGACY_REFERRAL_COOKIE)?.value;
-    const referral = pendingReferral ? await db.gymConversionReviewLink.findFirst({
-        where: { tokenHash: sha256Hex(pendingReferral), gymId: invite.gymId, expiresAt: { gt: new Date() } }, select: { id: true },
-    }) : null;
-    const response = NextResponse.json({ message: `You claimed and verified ${invite.gym.name}.`, gymId: invite.gymId,
-        ...(referral ? { redirectTo: `/referrals/review/${encodeURIComponent(pendingReferral!)}` } : {}),
-    });
-    if (referral) { response.cookies.delete(PENDING_REFERRAL_COOKIE); response.cookies.delete(LEGACY_REFERRAL_COOKIE); }
+    const response = NextResponse.json({ message: `You claimed and verified ${invite.gym.name}.`, gymId: invite.gymId });
     response.cookies.delete(PENDING_GYM_INVITE_COOKIE);
     response.cookies.delete(LEGACY_GYM_INVITE_COOKIE);
     return response;

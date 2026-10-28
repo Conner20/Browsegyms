@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   Check,
   CheckCircle2,
+  ClipboardCheck,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   Dumbbell,
   ExternalLink,
   LocateFixed,
+  LogIn,
   Mail,
   Map as MapIcon,
   MapPin,
@@ -26,6 +28,7 @@ import {
   SquarePen,
   SlidersHorizontal,
   Star,
+  UserPlus,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -291,7 +294,37 @@ export default function GymDiscoveryLanding({
     searchOverride = useRef(false),
     preCompareSelected = useRef<string | null>(null),
     listRef = useRef<HTMLDivElement>(null),
-    listLoadMoreRef = useRef<HTMLDivElement>(null);
+    listLoadMoreRef = useRef<HTMLDivElement>(null),
+    actionRowRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const row = actionRowRef.current;
+    if (!row) return;
+    let frame = 0;
+    const collapseOrder = [
+      ".profile-menu-trigger",
+      ".landing-action-filters",
+      ".landing-action-favorites",
+      ".landing-action-referrals",
+      ".landing-action-listing, .landing-action-admin",
+      ".landing-mobile-auth-button",
+    ];
+    const fitActions = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const buttons = Array.from(row.querySelectorAll<HTMLElement>(".landing-action-compact"));
+        buttons.forEach(button => button.classList.remove("landing-action-compact"));
+        for (const selector of collapseOrder) {
+          if (row.scrollWidth <= row.clientWidth + 1) break;
+          row.querySelectorAll<HTMLElement>(selector).forEach(button => button.classList.add("landing-action-compact"));
+        }
+      });
+    };
+    const observer = new ResizeObserver(fitActions);
+    observer.observe(row);
+    fitActions();
+    return () => { observer.disconnect(); window.cancelAnimationFrame(frame); };
+  }, [isAdmin, managedGymId, signedIn]);
   const track = (eventType: string, data: Record<string, unknown> = {}) =>
     visitor.current &&
     fetch("/api/analytics/landing-event", {
@@ -1048,10 +1081,12 @@ export default function GymDiscoveryLanding({
             </nav>
           )}
         </div>
-        <div className="landing-action-row flex h-[58px] flex-nowrap items-center gap-3 overflow-x-auto border-t px-4 dark:border-white/10">
+        <div ref={actionRowRef} className="landing-action-row flex h-[58px] flex-nowrap items-center gap-3 overflow-hidden border-t px-4 dark:border-white/10">
           {managedGymId && (
-            <button
+            <><button
               type="button"
+              aria-label="My Listing"
+              title="My Listing"
               onClick={() => window.location.assign("/gym-listing/edit")}
               className="filter-pill landing-toolbar-button landing-action-listing"
             >
@@ -1059,11 +1094,22 @@ export default function GymDiscoveryLanding({
               <span className="landing-action-label landing-listing-label">
                 My Listing
               </span>
-            </button>
+            </button><button
+              type="button"
+              aria-label="My Referrals"
+              title="My Referrals"
+              onClick={() => window.location.assign("/referrals")}
+              className="filter-pill landing-toolbar-button landing-action-referrals"
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              <span className="landing-action-label">My Referrals</span>
+            </button></>
           )}
           {isAdmin && (
             <button
               type="button"
+              aria-label="Admin"
+              title="Admin"
               onClick={() => window.location.assign("/admin")}
               className="filter-pill landing-toolbar-button landing-action-admin"
             >
@@ -1075,6 +1121,8 @@ export default function GymDiscoveryLanding({
           )}
           <button
             type="button"
+            aria-label="Favorites"
+            title="Favorites"
             onClick={() => setFavoritesOnly((v) => !v)}
             className={`filter-pill landing-toolbar-button landing-action-favorites ${favoritesOnly ? "!border-[#22c55e] !bg-[#22c55e] !text-black" : ""}`}
           >
@@ -1086,6 +1134,9 @@ export default function GymDiscoveryLanding({
             </span>
           </button>
           <button
+            type="button"
+            aria-label="Filters"
+            title="Filters"
             onClick={() => {
               setFilterOpen(true);
               track("FILTER_OPENED");
@@ -1104,21 +1155,27 @@ export default function GymDiscoveryLanding({
             <nav className="ml-auto flex shrink-0 items-center gap-1 md:hidden">
               <button
                 type="button"
+                aria-label="Log in"
+                title="Log in"
                 onClick={() => window.location.assign("/log-in")}
                 id="landing-mobile-login"
                 className="landing-mobile-auth-button"
                 style={{ background: "transparent" }}
               >
-                Log in
+                <LogIn className="h-4 w-4" />
+                <span className="landing-mobile-auth-label">Log in</span>
               </button>
               <button
                 type="button"
+                aria-label="Sign up"
+                title="Sign up"
                 onClick={() => window.location.assign("/sign-up")}
                 id="landing-mobile-signup"
                 className="landing-mobile-auth-button"
                 style={{ background: "#22c55e", color: "#111411" }}
               >
-                Sign up
+                <UserPlus className="h-4 w-4" />
+                <span className="landing-mobile-auth-label">Sign up</span>
               </button>
             </nav>
           )}

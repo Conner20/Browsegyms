@@ -1,5 +1,4 @@
 import { db } from "@/prisma/client";
-import { sha256Hex } from "@/lib/token";
 
 export type ConversionReviewStatus = "purchased" | "not_found" | "check_later";
 
@@ -18,15 +17,12 @@ export type ConversionReviewRow = {
 
 const outcomeTypes = ["DAY_PASS_GYM_CONFIRMED", "MEMBERSHIP_GYM_CONFIRMED", "DAY_PASS_GYM_DECLINED", "MEMBERSHIP_GYM_DECLINED"];
 
-export async function getConversionReview(rawToken: string) {
-  const link = await db.gymConversionReviewLink.findFirst({
-    where: { tokenHash: sha256Hex(rawToken), expiresAt: { gt: new Date() } },
-    select: { id: true, gymId: true, expiresAt: true, gym: { select: { name: true } } },
-  });
-  if (!link) return null;
+export async function getConversionReview(gymId: string) {
+  const gym = await db.gym.findUnique({ where: { id: gymId }, select: { id: true, name: true } });
+  if (!gym) return null;
 
   const events = await db.landingEvent.findMany({
-    where: { gymId: link.gymId, eventType: { in: ["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED", ...outcomeTypes] } },
+    where: { gymId, eventType: { in: ["DAY_PASS_CLICKED", "MEMBERSHIP_CLICKED", ...outcomeTypes] } },
     select: { id: true, eventType: true, visitorId: true, visitId: true, userId: true, metadata: true, createdAt: true, user: { select: { email: true } } },
     orderBy: { createdAt: "desc" },
     take: 50_000,
@@ -87,5 +83,5 @@ export async function getConversionReview(rawToken: string) {
     .map(row => ({ id: row.id, sourceClickId: row.sourceClickId, email: row.email, claimType: row.claimType, offer: row.offer, clickedAt: row.clickedAt, status: row.status, confirmedAt: row.confirmedAt, rowKind: row.rowKind, question: row.question }));
 
   const rows = referralRows.slice(0, 5_000);
-  return { linkId: link.id, gymId: link.gymId, gymName: link.gym.name, expiresAt: link.expiresAt.toISOString(), rows };
+  return { gymId: gym.id, gymName: gym.name, rows };
 }

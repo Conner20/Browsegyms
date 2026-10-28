@@ -3036,6 +3036,38 @@ html.dark body .gym-discovery-page > header a[href="/admin"].filter-pill.landing
   }
 }
 
+/* Collapse only the actions selected by the measured toolbar overflow. These
+   rules intentionally follow the legacy breakpoint fallbacks above so labels
+   remain visible whenever the complete toolbar actually fits. */
+.gym-discovery-page .landing-action-row .landing-action-label,
+.gym-discovery-page .landing-action-row .landing-mobile-auth-label {
+  display: inline !important;
+}
+
+html body .gym-discovery-page .landing-action-row .landing-action-compact {
+  display: inline-flex !important;
+  width: 36px !important;
+  min-width: 36px !important;
+  height: 36px !important;
+  min-height: 36px !important;
+  flex: 0 0 36px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.gym-discovery-page .landing-action-row .landing-action-compact :is(.landing-action-label, .landing-mobile-auth-label) {
+  display: none !important;
+}
+
+html body .gym-discovery-page .landing-action-row .landing-action-compact svg {
+  width: 16px !important;
+  height: 16px !important;
+  flex: none !important;
+}
+
 /* Landing authentication actions share the toolbar's dimensions and type.
    Login stays borderless; Sign up remains the green primary action. */
 html body .gym-discovery-page .landing-auth-login,

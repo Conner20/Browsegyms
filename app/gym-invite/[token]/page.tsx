@@ -4,7 +4,6 @@ import AdminGymListingEditor from "@/components/AdminGymListingEditor";
 import StableExploreLink from "@/components/StableExploreLink";
 import { authOptions } from "@/lib/auth";
 import { getListingVerification } from "@/lib/listing-verification";
-import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -15,8 +14,6 @@ export default async function GymInvitePage({ params }: Props) {
     const { token } = await params;
 
     const invite = await getListingVerification(token);
-    if (invite?.kind === "referral" && invite.gym._count.access) redirect(`/referrals/review/${encodeURIComponent(token)}`);
-
     if (invite?.gym._count.access) {
         return (
             <main className="grid min-h-screen place-items-center bg-zinc-50 p-6 text-zinc-950 dark:bg-neutral-950 dark:text-white">

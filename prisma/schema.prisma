@@ -140,7 +140,6 @@ model Gym {
   access            GymAccess[]
   claims            GymClaim[]
   invites           GymInvite[]
-  conversionReviewLink GymConversionReviewLink?
   favorites         GymFavorite[]
   landingEvents     LandingEvent[]
 
@@ -197,19 +196,6 @@ model GymInvite {
   createdAt    DateTime  @default(now())
 
   @@index([gymId, expiresAt])
-}
-
-model GymConversionReviewLink {
-  id             String   @id @default(cuid())
-  gym            Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
-  gymId          String   @unique
-  tokenHash      String   @unique
-  createdByEmail String
-  expiresAt      DateTime
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@index([expiresAt])
 }
 
 model GymFavorite {

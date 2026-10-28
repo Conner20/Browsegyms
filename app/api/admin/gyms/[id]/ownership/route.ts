@@ -52,7 +52,6 @@ export async function PATCH(req: Request, { params }: Context) {
       const owners = await tx.gymAccess.findMany({ where: { gymId }, select: { userId: true } });
       const latestInvite = await tx.gymInvite.findFirst({ where: { gymId }, orderBy: { createdAt: "desc" }, select: { id: true } });
       await tx.gymAccess.deleteMany({ where: { gymId } });
-      await tx.gymConversionReviewLink.deleteMany({ where: { gymId } });
       await tx.gymClaim.deleteMany({ where: { gymId } });
       if (latestInvite) {
         await tx.gymInvite.deleteMany({ where: { gymId, id: { not: latestInvite.id } } });

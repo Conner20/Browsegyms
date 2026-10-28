@@ -24,7 +24,6 @@ async function deleteUserAndRelations(userId: string) {
         await tx.gymClaim.updateMany({ where: { reviewedById: userId }, data: { reviewedById: null } });
         await tx.gymInvite.deleteMany({ where: { createdById: userId } });
         await tx.gymAccess.deleteMany({ where: { userId } });
-        await tx.gymConversionReviewLink.deleteMany({ where: { gymId: { in: ownedGyms.map(({ gymId }) => gymId) } } });
         await tx.nutritionEntry.deleteMany({ where: { userId } });
         await tx.nutritionCustomFood.deleteMany({ where: { userId } });
         await tx.bodyweightEntry.deleteMany({ where: { userId } });

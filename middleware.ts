@@ -1,4 +1,4 @@
-import { PENDING_GYM_INVITE_COOKIE, PENDING_REFERRAL_COOKIE } from "@/lib/brand-cookies";
+import { PENDING_GYM_INVITE_COOKIE } from "@/lib/brand-cookies";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
@@ -17,7 +17,7 @@ const PUBLIC_PATHS = [
     "/legal/support",
 ];
 
-const RETAINED_PAGE_PREFIXES = ["/admin", "/gym-invite", "/gym-listing", "/day-pass", "/change-password"];
+const RETAINED_PAGE_PREFIXES = ["/admin", "/gym-invite", "/gym-listing", "/day-pass", "/change-password", "/referrals"];
 const PENDING_GYM_INVITE_MAX_AGE = 60 * 60 * 24 * 14;
 
 const startsWithAny = (pathname: string, prefixes: string[]) =>
@@ -39,14 +39,10 @@ export async function middleware(req: NextRequest) {
 
     const isPublic =
         PUBLIC_PATHS.includes(pathname) ||
-        startsWithAny(pathname, ["/verify-email", "/reset-password", "/gym-invite/", "/referrals/review/"]);
+        startsWithAny(pathname, ["/verify-email", "/reset-password", "/gym-invite/"]);
 
     if (isPublic) {
         const response = NextResponse.next();
-        const referralMatch = pathname.match(/^\/referrals\/review\/([A-Za-z0-9_-]+)\/?$/);
-        if (referralMatch) response.cookies.set(PENDING_REFERRAL_COOKIE, referralMatch[1], {
-            httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 14,
-        });
         const inviteMatch = pathname.match(/^\/gym-invite\/([^/]+)\/?$/);
         if (inviteMatch) {
             response.cookies.set(PENDING_GYM_INVITE_COOKIE, decodeURIComponent(inviteMatch[1]), {
@@ -69,6 +65,11 @@ export async function middleware(req: NextRequest) {
     const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });
 
     if (!token) {
+        if (pathname === "/referrals") {
+            const loginUrl = new URL("/log-in", req.url);
+            loginUrl.searchParams.set("callbackUrl", "/referrals");
+            return NextResponse.redirect(loginUrl);
+        }
         const redirectUrl = new URL("/", req.url);
         return NextResponse.redirect(redirectUrl);
     }

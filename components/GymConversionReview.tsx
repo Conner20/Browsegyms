@@ -1,5 +1,6 @@
 "use client";
-import BrandIcon from "@/components/BrandIcon";
+import Link from "next/link";
+import { Trash2 } from "lucide-react";
 
 import { useMemo, useState } from "react";
 import type { ConversionReviewRow, ConversionReviewStatus } from "@/lib/conversion-review";
@@ -11,11 +12,12 @@ const choices: { value: Decision; label: string }[] = [
   { value: "not_found", label: "No" },
 ];
 
-export default function GymConversionReview({ token, gymName, expiresAt, initialRows }: { token: string; gymName: string; expiresAt: string; initialRows: ConversionReviewRow[] }) {
+export default function GymConversionReview({ initialRows }: { initialRows: ConversionReviewRow[] }) {
   const [rows, setRows] = useState(initialRows);
   const [decisions, setDecisions] = useState<Record<string, Decision>>({});
   const [historyPage, setHistoryPage] = useState(1);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const pendingRows = useMemo(() => rows.filter(row => row.status === "check_later"), [rows]);
   const confirmedRows = useMemo(() => rows.filter(row => row.status === "purchased"), [rows]);
@@ -30,7 +32,7 @@ export default function GymConversionReview({ token, gymName, expiresAt, initial
     setMessage("");
     const submittedAt = new Date().toISOString();
     const submitted = pendingRows.map(row => ({ clickId: row.id, status: decisions[row.id] }));
-    const response = await fetch(`/api/referrals/review/${encodeURIComponent(token)}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: submitted }) });
+    const response = await fetch("/api/referrals", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decisions: submitted }) });
     const result = await response.json().catch(() => ({}));
     setSaving(false);
     if (!response.ok) { setMessage(result.message ?? "Unable to save the review."); return; }
@@ -39,14 +41,23 @@ export default function GymConversionReview({ token, gymName, expiresAt, initial
     setHistoryPage(1);
     setMessage("Referral confirmations saved. You may now exit this page.");
   };
+  const removeConfirmation = async (row: ConversionReviewRow) => {
+    setDeletingId(row.id);
+    setMessage("");
+    const response = await fetch("/api/referrals", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clickId: row.id }) });
+    const result = await response.json().catch(() => ({}));
+    setDeletingId(null);
+    if (!response.ok) { setMessage(result.message ?? "Unable to remove the confirmation."); return; }
+    setRows(current => current.map(item => item.id === row.id ? { ...item, status: "check_later", confirmedAt: undefined } : item));
+    setDecisions(current => { const next = { ...current }; delete next[row.id]; return next; });
+    setHistoryPage(page => Math.max(1, Math.min(page, Math.ceil((confirmedRows.length - 1) / PAGE_SIZE))));
+    setMessage("Referral confirmation removed. It is ready to review again.");
+  };
 
-  return <main className="min-h-screen bg-[#050505] px-4 py-10 text-white">
+  return <div className="text-white">
     <section className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-[#111411] shadow-2xl">
       <header className="border-b border-white/10 p-6 sm:p-8">
-        <BrandIcon />
-        <h1 className="mt-2 text-3xl font-black">Confirm referrals for {gymName}</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected day pass or membership.</p>
-        <p className="mt-3 text-xs text-white/40">This secure link expires {new Date(expiresAt).toLocaleString()}.</p>
+        <p className="max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected day pass or membership.</p>
       </header>
 
       {pendingRows.length ? <>
@@ -70,12 +81,15 @@ export default function GymConversionReview({ token, gymName, expiresAt, initial
         </summary>
         <div className="mt-5 overflow-x-auto rounded-2xl border border-white/10">
           {confirmedRows.length ? <table className="w-full min-w-[760px] text-sm">
-            <thead className="text-left text-xs uppercase tracking-wide text-white/45"><tr><th className="p-4">User email</th><th>Offer</th><th>Clicked</th><th className="pr-4">Confirmed</th></tr></thead>
-            <tbody>{visibleConfirmedRows.map(row => <tr key={row.id} className="border-t border-white/10"><td className="p-4 font-semibold">{row.email}</td><td className="font-semibold">{row.offer}</td><td>{new Date(row.clickedAt).toLocaleString()}</td><td className="pr-4">{row.confirmedAt ? new Date(row.confirmedAt).toLocaleString() : "Confirmed"}</td></tr>)}</tbody>
+            <thead className="text-left text-xs uppercase tracking-wide text-white/45"><tr><th className="p-4">User email</th><th>Offer</th><th>Clicked</th><th>Confirmed</th><th className="pr-4 text-right">Remove</th></tr></thead>
+            <tbody>{visibleConfirmedRows.map(row => <tr key={row.id} className="border-t border-white/10"><td className="p-4 font-semibold">{row.email}</td><td className="font-semibold">{row.offer}</td><td>{new Date(row.clickedAt).toLocaleString()}</td><td>{row.confirmedAt ? new Date(row.confirmedAt).toLocaleString() : "Confirmed"}</td><td className="py-2 pr-4 text-right"><button type="button" disabled={deletingId===row.id} aria-label={`Remove confirmation for ${row.email}`} title="Remove confirmation" onClick={()=>void removeConfirmation(row)} className="inline-grid h-9 w-9 place-items-center rounded-full border border-red-400/35 text-red-300 transition hover:border-red-300 hover:bg-red-500/10 disabled:cursor-wait disabled:opacity-40"><Trash2 className="h-4 w-4"/></button></td></tr>)}</tbody>
           </table> : <p className="p-6 text-center text-sm text-white/50">No previous confirmations.</p>}
         </div>
         {confirmedRows.length > PAGE_SIZE && <div className="mt-4 flex items-center justify-end gap-3 text-sm"><button type="button" disabled={historyPage === 1} onClick={() => setHistoryPage(page => Math.max(1, page - 1))} className="rounded-full border border-white/15 px-4 py-2 font-bold disabled:opacity-35">Previous</button><span className="text-white/55">Page {historyPage} of {pageCount}</span><button type="button" disabled={historyPage === pageCount} onClick={() => setHistoryPage(page => Math.min(pageCount, page + 1))} className="rounded-full border border-white/15 px-4 py-2 font-bold disabled:opacity-35">Next</button></div>}
       </details>
     </section>
-  </main>;
+    <div className="flex justify-center py-3 pb-[max(.75rem,env(safe-area-inset-bottom))]">
+      <Link href="/" className="gym-owner-back-button rounded-xl border border-white/20 bg-transparent px-6 py-2.5 text-sm font-black text-white/75 transition hover:border-white hover:text-white">Back</Link>
+    </div>
+  </div>;
 }
