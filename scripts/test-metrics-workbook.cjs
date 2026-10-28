@@ -7,7 +7,7 @@ require('ts-node').register({ transpileOnly: true, compilerOptions: { module: 'c
 const originalLoad = Module._load;
 const today = new Date().toISOString().slice(0, 10);
 const at = new Date(`${today}T00:00:00Z`);
-const gyms = [{ id: 'g1', name: 'Alpha Gym', isPublished: true, contactEmail: 'gym@example.test', membershipOptions: [], createdAt: at, updatedAt: at, access: [{ createdAt: at, assignedByEmail: 'admin@example.test', user: { email: 'owner@example.test' } }] }, { id: 'g2', name: 'Beta Gym', isPublished: false, contactEmail: '', membershipOptions: [], createdAt: at, updatedAt: at, access: [] }];
+const gyms = [{ id: 'g1', name: 'Alpha Gym', isPublished: true, contactEmail: 'gym@example.test', dayPassPrice: null, dayPassDetails: null, dayPassOptions: [{ id: 'dp1', price: 12, durationDays: 1, purchaseUrl: '', access: [] }], membershipPrice: null, membershipOptions: [], createdAt: at, updatedAt: at, access: [{ createdAt: at, assignedByEmail: 'admin@example.test', user: { email: 'owner@example.test' } }] }, { id: 'g2', name: 'Beta Gym', isPublished: false, contactEmail: '', dayPassPrice: null, dayPassDetails: null, dayPassOptions: [], membershipPrice: null, membershipOptions: [{ id: 'm1', name: 'Basic membership', price: 30 }], createdAt: at, updatedAt: at, access: [] }];
 const users = [{ id: 'u1', email: 'member@example.test', role: 'USER', isAdmin: false, createdAt: at, emailVerified: at, lastLoginAt: null, deletedAt: null, gymAccesses: gyms.map(gym => ({ gym })) }];
 const event = (id, eventType, gymId = 'g1', metadata = {}) => ({ id, eventType, gymId, gym: gyms.find(gym => gym.id === gymId), userId: 'u1', user: users[0], visitorId: 'v1', visitId: `visit:${id}`, createdAt: at, durationMs: null, path: '/', metadata });
 let events = [event('v', 'VISIT', null), event('o', 'GYM_OPENED'), event('c', 'DAY_PASS_CLICKED', 'g1', { price: 12 }), { ...event('p', 'DAY_PASS_GYM_CONFIRMED', 'g1', { claimClickId: 'c', attributedAmount: 12, customerEmail: users[0].email, offerName: 'Day pass' }), visitId: 'gym-confirm:c' }, event('legacy-cycle', 'MEMBERSHIP_CYCLE_GYM_CONFIRMED', 'g1', { claimClickId: 'legacy-membership', attributedAmount: 99, customerEmail: users[0].email }), event('r', 'DAY_PASS_CLAIM_CONFIRMED'), event('f', 'FILTER_CHANGED', null, { filter: 'Squat rack' }), event('c2', 'DAY_PASS_CLICKED', 'g2', { price: 20 }), event('r2', 'DAY_PASS_CLAIM_CONFIRMED', 'g2')];
@@ -63,6 +63,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert.equal(rows(book.getWorksheet('Filter usage')).find(row => row[0] === 'Equipment')[1], 1);
   assert.equal(rows(book.getWorksheet('Filter usage')).find(row => row[0] === 'Gym type')[1], 0);
   assert.deepEqual(rows(book.getWorksheet('Gym financials')).find(row => row[0] === 'Beta Gym'), ['Beta Gym', 'No', 'User reported', 1, 1, 1, 0, 0, 0, 0, 0, 20, 0, 20, 'g2']);
+  assert.deepEqual(rows(book.getWorksheet('Revenue by offer')), [['Alpha Gym', 'Day pass', '1-day pass', 1, 12, 'g1'], ['Beta Gym', 'Membership', 'Basic membership', 0, 0, 'g2']], 'configured zero-revenue offers remain visible');
   assert.equal(filterCategory({ filter: 'Pool' }), 'Amenities');
   assert.equal(filterCategory({ filter: 'Open' }), 'Gym type');
   const savedEvents = events;

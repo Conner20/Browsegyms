@@ -5,6 +5,7 @@ import { filterCategory } from "@/lib/metrics-filter-category";
 import { db } from "@/prisma/client";
 import { membershipInitialCharge, membershipTermsFromMetadata } from "@/lib/membership-attribution";
 import { cleanMembershipOptions } from "@/lib/memberships";
+import { cleanDayPassOptions } from "@/lib/day-passes";
 
 const day = (date: Date) => date.toISOString().slice(0, 10);
 const actor = (event: { userId: string | null; visitorId: string }) => event.userId ? `user:${event.userId}` : `visitor:${event.visitorId}`;
@@ -20,7 +21,7 @@ export async function buildAdminMetricsWorkbook() {
   const [events, users, gyms, latestReset] = await Promise.all([
     db.landingEvent.findMany({ where: { eventType: { not: "METRICS_RESET" } }, select: { id: true, eventType: true, visitorId: true, visitId: true, path: true, gymId: true, userId: true, metadata: true, durationMs: true, createdAt: true, gym: { select: { name: true } }, user: { select: { email: true } } }, orderBy: { createdAt: "asc" } }),
     db.user.findMany({ where: { emailVerified: { not: null } }, select: { id: true, email: true, role: true, isAdmin: true, createdAt: true, emailVerified: true, lastLoginAt: true, deletedAt: true, gymAccesses: { select: { gym: { select: { id: true, name: true } } } } }, orderBy: { createdAt: "asc" } }),
-    db.gym.findMany({ select: { id: true, name: true, isPublished: true, contactEmail: true, membershipOptions: true, createdAt: true, updatedAt: true, access: { orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true, assignedByEmail: true, user: { select: { email: true } } } } }, orderBy: { name: "asc" } }),
+    db.gym.findMany({ select: { id: true, name: true, isPublished: true, contactEmail: true, dayPassPrice: true, dayPassDetails: true, dayPassOptions: true, membershipPrice: true, membershipOptions: true, createdAt: true, updatedAt: true, access: { orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true, assignedByEmail: true, user: { select: { email: true } } } } }, orderBy: { name: "asc" } }),
     db.landingEvent.findFirst({ where: { eventType: "METRICS_RESET" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
 
@@ -46,7 +47,7 @@ export async function buildAdminMetricsWorkbook() {
   const confirmedPurchaseEvents = [...resolvedDayPasses.values(), ...resolvedMemberships.values()];
   const financialRecords = confirmedPurchaseEvents.map(event => {
     const metadata=event.metadata as Record<string,unknown>|null,amount=typeof metadata?.attributedAmount==="number"&&Number.isFinite(metadata.attributedAmount)?Math.max(0,Math.round(metadata.attributedAmount*100)/100):0,type=event.eventType==="DAY_PASS_GYM_CONFIRMED"?"Day pass":"Membership";
-    return { event, type, amount, email:typeof metadata?.customerEmail==="string"?metadata.customerEmail:event.user?.email??"", offer:typeof metadata?.offerName==="string"?metadata.offerName:type };
+    return { event, type, amount, email:typeof metadata?.customerEmail==="string"?metadata.customerEmail:event.user?.email??"", offer:typeof metadata?.offerName==="string"?metadata.offerName:type, offerId:typeof metadata?.offerId==="string"?metadata.offerId:"" };
   }).filter(record=>record.amount>0);
   const dayPassAttributedRevenue=financialRecords.filter(record=>record.type==="Day pass").reduce((sum,record)=>sum+record.amount,0),membershipAttributedRevenue=financialRecords.filter(record=>record.type==="Membership").reduce((sum,record)=>sum+record.amount,0),totalAttributedRevenue=dayPassAttributedRevenue+membershipAttributedRevenue;
   const payingUsers = new Set(financialRecords.map(record => record.email.trim().toLowerCase()).filter(Boolean));
@@ -199,14 +200,32 @@ export async function buildAdminMetricsWorkbook() {
     spending.addRow([email, ...revenueTotals(financialRecords.filter(record => (record.email.toLowerCase() || "Unknown user") === email))]);
   }
   const offers = addTable("Revenue by offer", ["Gym", "Type", "Offer", "Paid charges", "Revenue", "Gym ID"]);
-  const offerGroups = new Map<string, typeof financialRecords>();
-  for (const record of financialRecords) {
-    const key = JSON.stringify([record.event.gymId, record.type, record.offer]);
-    const group = offerGroups.get(key) ?? []; group.push(record); offerGroups.set(key, group);
+  type OfferGroup = { gymId: string; gym: string; type: string; offer: string; offerId: string; records: typeof financialRecords };
+  const configuredOffers: OfferGroup[] = [];
+  for (const gym of gyms) {
+    const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
+    if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: "", access: [] });
+    for (const option of dayPassOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Day pass", offer: `${option.durationDays}-day pass`, offerId: option.id, records: [] });
+    const membershipOptions = cleanMembershipOptions(gym.membershipOptions);
+    if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push({ ...cleanMembershipOptions([{ id: "legacy-membership", name: "Membership", price: gym.membershipPrice }])[0] });
+    for (const option of membershipOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Membership", offer: option.name || "Membership", offerId: option.id, records: [] });
   }
-  for (const records of offerGroups.values()) {
-    const first = records[0];
-    offers.addRow([first.event.gym?.name ?? "Deleted gym", first.type, first.offer, records.length, revenueTotals(records)[0], first.event.gymId ?? "deleted"]);
+  const offerGroups = new Map(configuredOffers.map((group, index) => [`configured:${index}`, group]));
+  for (const record of financialRecords) {
+    const gymId = record.event.gymId ?? "deleted", normalizedName = record.offer.trim().toLowerCase();
+    const candidates = configuredOffers.filter(group => group.gymId === gymId && group.type === record.type);
+    const configured = candidates.find(group => record.offerId && group.offerId === record.offerId)
+      ?? candidates.find(group => group.offer.trim().toLowerCase() === normalizedName)
+      ?? (candidates.length === 1 && normalizedName === record.type.toLowerCase() ? candidates[0] : undefined);
+    if (configured) configured.records.push(record);
+    else {
+      const key = JSON.stringify([gymId, record.type, record.offerId || normalizedName]);
+      const group: OfferGroup = offerGroups.get(key) ?? { gymId, gym: record.event.gym?.name ?? "Deleted gym", type: record.type, offer: record.offer, offerId: record.offerId, records: [] };
+      group.records.push(record); offerGroups.set(key, group);
+    }
+  }
+  for (const group of [...offerGroups.values()].sort((a, b) => revenueTotals(b.records)[0] - revenueTotals(a.records)[0] || a.gym.localeCompare(b.gym) || a.type.localeCompare(b.type) || a.offer.localeCompare(b.offer))) {
+    offers.addRow([group.gym, group.type, group.offer, group.records.length, revenueTotals(group.records)[0], group.gymId]);
   }
   gymTotals.sort((a, b) => a - b);
   const middle = Math.floor(gymTotals.length / 2);
