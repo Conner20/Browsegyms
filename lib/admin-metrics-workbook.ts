@@ -1,4 +1,4 @@
-import { EASTERN_TIMESTAMP_FORMAT, easternTimestampSerial, easternTimestampText } from "@/lib/metrics-reporting-time";
+import { EASTERN_TIMESTAMP_FORMAT, easternDateKey, easternTimestampSerial, easternTimestampText } from "@/lib/metrics-reporting-time";
 import ExcelJS from "exceljs";
 import { getUserAdminStatus } from "@/lib/admin";
 import { db } from "@/prisma/client";
@@ -6,7 +6,7 @@ import { membershipInitialCharge, membershipTermsFromMetadata } from "@/lib/memb
 import { cleanMembershipOptions } from "@/lib/memberships";
 import { cleanDayPassOptions } from "@/lib/day-passes";
 
-const day = (date: Date) => date.toISOString().slice(0, 10);
+const day = (date: Date) => easternDateKey(date);
 const actor = (event: { userId: string | null; visitorId: string }) => event.userId ? `user:${event.userId}` : `visitor:${event.visitorId}`;
 
 function formatSheet(sheet: ExcelJS.Worksheet) {
@@ -45,8 +45,8 @@ export async function buildAdminMetricsWorkbook() {
   // membership-cycle events must not create additional purchases or revenue.
   const confirmedPurchaseEvents = [...resolvedDayPasses.values(), ...resolvedMemberships.values()];
   const financialRecords = confirmedPurchaseEvents.map(event => {
-    const metadata=event.metadata as Record<string,unknown>|null,amount=typeof metadata?.attributedAmount==="number"&&Number.isFinite(metadata.attributedAmount)?Math.max(0,Math.round(metadata.attributedAmount*100)/100):0,type=event.eventType==="DAY_PASS_GYM_CONFIRMED"?"Day pass":"Membership";
-    return { event, type, amount, email:typeof metadata?.customerEmail==="string"?metadata.customerEmail:event.user?.email??"", offer:typeof metadata?.offerName==="string"?metadata.offerName:type, offerId:typeof metadata?.offerId==="string"?metadata.offerId:"" };
+    const metadata=event.metadata as Record<string,unknown>|null,type=event.eventType==="DAY_PASS_GYM_CONFIRMED"?"Day pass":"Membership",clickType=type==="Day pass"?"DAY_PASS_CLICKED":"MEMBERSHIP_CLICKED",clickId=confirmedClickId(event,clickType),click=events.find(item=>item.id===clickId),amount=typeof metadata?.attributedAmount==="number"&&Number.isFinite(metadata.attributedAmount)?Math.max(0,Math.round(metadata.attributedAmount*100)/100):0;
+    return { event, purchaseDate:click?.createdAt??event.createdAt, type, amount, email:typeof metadata?.customerEmail==="string"?metadata.customerEmail:event.user?.email??"", offer:typeof metadata?.offerName==="string"?metadata.offerName:type, offerId:typeof metadata?.offerId==="string"?metadata.offerId:"" };
   }).filter(record=>record.amount>0);
   const dayPassAttributedRevenue=financialRecords.filter(record=>record.type==="Day pass").reduce((sum,record)=>sum+record.amount,0),membershipAttributedRevenue=financialRecords.filter(record=>record.type==="Membership").reduce((sum,record)=>sum+record.amount,0),totalAttributedRevenue=dayPassAttributedRevenue+membershipAttributedRevenue;
   const payingUsers = new Set(financialRecords.map(record => record.email.trim().toLowerCase()).filter(Boolean));
@@ -90,7 +90,7 @@ export async function buildAdminMetricsWorkbook() {
   for (const event of events) getDailyRow(day(event.createdAt)).sourceEvents.push(event);
   const recordedDates = [...users.map(user => user.createdAt), ...gyms.map(gym => gym.createdAt), ...events.map(event => event.createdAt)];
   const today = day(new Date()), firstRecordedDay = latestReset ? day(latestReset.createdAt) : recordedDates.length ? day(new Date(Math.min(...recordedDates.map(date => date.getTime())))) : today;
-  for (let cursor = new Date(`${firstRecordedDay}T00:00:00.000Z`), end = new Date(`${today}T00:00:00.000Z`); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) getDailyRow(day(cursor));
+  for (let cursor = new Date(`${firstRecordedDay}T12:00:00.000Z`), end = new Date(`${today}T12:00:00.000Z`); cursor <= end; cursor.setUTCDate(cursor.getUTCDate() + 1)) getDailyRow(cursor.toISOString().slice(0, 10));
   const visitorUsers = new Map(events.filter(event => event.userId).map(event => [event.visitorId, event.userId!]));
   const userFor = (event: ExportEvent) => event.userId || visitorUsers.get(event.visitorId);
   const gymResponseIds = (prefix: "DAY_PASS" | "MEMBERSHIP") => new Set(events.filter(event => [`${prefix}_GYM_CONFIRMED`, `${prefix}_GYM_DECLINED`].includes(event.eventType)).map(event => confirmedClickId(event, `${prefix}_CLICKED` as "DAY_PASS_CLICKED" | "MEMBERSHIP_CLICKED")));
@@ -103,23 +103,23 @@ export async function buildAdminMetricsWorkbook() {
   for (const [clickId,event] of resolvedDayPasses) { const userId=userFor(event)||events.find(item=>item.id===clickId)?.userId;if(userId&&byUser.has(userId))byUser.get(userId)!.dayConfirmIds.add(clickId); }
   for (const [clickId,event] of resolvedMemberships) { const userId=userFor(event)||events.find(item=>item.id===clickId)?.userId;if(userId&&byUser.has(userId))byUser.get(userId)!.memberConfirmIds.add(clickId); }
   const userSheet = workbook.addWorksheet("Users");
-  userSheet.columns = ["Email", "Status", "Deleted at", "Role", "Admin", "Gym", "Created", "Email verified", "Last active", "Day-pass clicks", "Day-pass confirms", "Membership clicks", "Membership confirms", "User-reported day passes", "User-reported memberships"].map(header => ({ header, key: header }));
+  userSheet.columns = ["Email", "Status", "Deleted at", "Role", "Admin", "Gym", "Created", "Email verified", "Last active", "Day-pass clicks", "Gym-confirmed day passes", "Membership clicks", "Gym-confirmed memberships", "User-reported day passes", "User-reported memberships"].map(header => ({ header, key: header }));
   for (const user of users) {
     const metrics = byUser.get(user.id)!;
     const reportedDayPasses = userReports(user.id, "DAY_PASS", dayPassGymResponseIds), reportedMemberships = userReports(user.id, "MEMBERSHIP", membershipGymResponseIds);
-    userSheet.addRow({ Email: user.email ?? "", Status: user.deletedAt ? "Deleted" : "Active", "Deleted at": user.deletedAt?.toISOString() ?? "", Role: user.role ?? "", Admin: !user.deletedAt && getUserAdminStatus(user) ? "Yes" : "No", Gym: user.gymAccesses.map(access => access.gym.name).join(", "), Created: user.createdAt.toISOString(), "Email verified": user.emailVerified?.toISOString() ?? "", "Last active": [user.lastLoginAt, ...events.filter(event => event.userId === user.id).map(event => event.createdAt)].filter((date): date is Date => Boolean(date)).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() ?? "", "Day-pass clicks": metrics.dayClicks, "Day-pass confirms": metrics.dayConfirmIds.size, "Membership clicks": metrics.memberClicks, "Membership confirms": metrics.memberConfirmIds.size, "User-reported day passes": reportedDayPasses, "User-reported memberships": reportedMemberships });
+    userSheet.addRow({ Email: user.email ?? "", Status: user.deletedAt ? "Deleted" : "Active", "Deleted at": user.deletedAt?.toISOString() ?? "", Role: user.role ?? "", Admin: !user.deletedAt && getUserAdminStatus(user) ? "Yes" : "No", Gym: user.gymAccesses.map(access => access.gym.name).join(", "), Created: user.createdAt.toISOString(), "Email verified": user.emailVerified?.toISOString() ?? "", "Last active": [user.lastLoginAt, ...events.filter(event => event.userId === user.id).map(event => event.createdAt)].filter((date): date is Date => Boolean(date)).sort((a, b) => b.getTime() - a.getTime())[0]?.toISOString() ?? "", "Day-pass clicks": metrics.dayClicks, "Gym-confirmed day passes": metrics.dayConfirmIds.size, "Membership clicks": metrics.memberClicks, "Gym-confirmed memberships": metrics.memberConfirmIds.size, "User-reported day passes": reportedDayPasses, "User-reported memberships": reportedMemberships });
   }
   formatSheet(userSheet);
 
   const visitorEmails = new Map(events.filter(event => event.user?.email).map(event => [event.visitorId, event.user!.email!.toLowerCase()]));
   const behaviorActor = (event: ExportEvent) => event.user?.email?.toLowerCase() || visitorEmails.get(event.visitorId) || `visitor:${event.visitorId}`;
   const gymSheet = workbook.addWorksheet("Gym demand funnel");
-  gymSheet.columns = ["Gym", "Profile opens", "Favorites", "Compared", "Website visits", "Day-pass clicks / confirms", "Day-pass signups", "Day-pass rate", "Membership clicks / confirms", "Membership signups", "Membership rate"].map(header => ({ header, key: header }));
+  gymSheet.columns = ["Gym", "Profile opens", "Favorites", "Compared", "Website visits", "Day-pass clicks / confirms", "Day-pass signups", "Membership clicks / confirms", "Membership signups"].map(header => ({ header, key: header }));
   for (const gym of gyms) {
     const gymEvents = events.filter(event => event.gymId === gym.id);
     const unique = (type: string) => new Set(gymEvents.filter(event => event.eventType === type).map(behaviorActor)).size;
     const opens = unique("GYM_OPENED"), dayClicks = unique("DAY_PASS_CLICKED"), memberClicks = unique("MEMBERSHIP_CLICKED");
-    gymSheet.addRow([gym.name, opens, unique("FAVORITE_ADDED"), unique("COMPARE_ADDED"), unique("WEBSITE_CLICKED"), `${dayClicks} / ${unique("DAY_PASS_GYM_CONFIRMED")}`, unique("DAY_PASS_SIGNUP"), opens ? Math.round(dayClicks / opens * 100) : 0, `${memberClicks} / ${unique("MEMBERSHIP_GYM_CONFIRMED")}`, unique("MEMBERSHIP_SIGNUP"), opens ? Math.round(memberClicks / opens * 100) : 0]);
+    gymSheet.addRow([gym.name, opens, unique("FAVORITE_ADDED"), unique("COMPARE_ADDED"), unique("WEBSITE_CLICKED"), `${dayClicks} / ${unique("DAY_PASS_GYM_CONFIRMED")}`, unique("DAY_PASS_SIGNUP"), `${memberClicks} / ${unique("MEMBERSHIP_GYM_CONFIRMED")}`, unique("MEMBERSHIP_SIGNUP")]);
   }
   formatSheet(gymSheet);
 
@@ -145,8 +145,10 @@ export async function buildAdminMetricsWorkbook() {
   const numericFilters = [{ category: "Distance", field: "distance", unit: "miles" }, { category: "Day-pass price", field: "dayPassPrice", unit: "USD" }, { category: "Membership price", field: "membershipPrice", unit: "USD" }];
   for (const { category, field, unit } of numericFilters) {
     const selections = appliedFilters.flatMap(event => { const value = (event.metadata as Record<string, unknown> | null)?.[field]; return typeof value === "number" && Number.isFinite(value) ? [{ actor: behaviorActor(event), value }] : []; });
-    const selectedMedian = median(selections.map(selection => selection.value));
-    filterSheet.addRow({ category, value: selectedMedian === null ? "No submitted value" : unit === "USD" ? `Median: $${selectedMedian.toFixed(2)}` : `Median: ${selectedMedian.toFixed(1)} miles`, users: new Set(selections.map(selection => selection.actor)).size });
+    const valuesByActor = new Map<string, number[]>();
+    for (const selection of selections) { const values = valuesByActor.get(selection.actor) ?? []; values.push(selection.value); valuesByActor.set(selection.actor, values); }
+    const selectedMedian = median([...valuesByActor.values()].map(values => median(values)!).filter(Number.isFinite));
+    filterSheet.addRow({ category, value: selectedMedian === null ? "No submitted value" : unit === "USD" ? `Median: $${selectedMedian.toFixed(2)}` : `Median: ${selectedMedian.toFixed(1)} miles`, users: valuesByActor.size });
   }
   const categoricalFilters = [{ category: "Gym type", field: "gymTypes" }, { category: "Equipment", field: "equipment" }, { category: "Amenities", field: "amenities" }];
   for (const { category, field } of categoricalFilters) {
@@ -189,7 +191,7 @@ export async function buildAdminMetricsWorkbook() {
   let opens = 0;
   for (const date of retainedDates) {
     for (const event of dailyMap.get(date)!.sourceEvents) {
-      trendVisitors.add(event.visitorId);
+      if (event.eventType === "VISIT") trendVisitors.add(event.visitorId);
       if (event.eventType === "GYM_OPENED") opens++;
       if (event.eventType === "DAY_PASS_CLICKED") trendDay.add(behaviorActor(event));
       if (event.eventType === "MEMBERSHIP_CLICKED") trendMember.add(behaviorActor(event));
@@ -199,10 +201,10 @@ export async function buildAdminMetricsWorkbook() {
     growth.addRow([date, users.filter(user => !user.deletedAt && day(user.createdAt) <= date).length, trendVisitors.size, opens, trendDay.size, trendDayConfirmed.size, trendMember.size, trendMemberConfirmed.size]);
   }
 
-  const revenueHeaders = ["Total revenue", "Day-pass revenue", "Membership revenue", "Paid charges"];
+  const revenueHeaders = ["Total revenue", "Day-pass revenue", "Membership revenue"];
   const revenueTotals = (records: typeof financialRecords) => {
     const total = records.reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100;
-    return [total, records.filter(record => record.type === "Day pass").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.filter(record => record.type === "Membership").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.length];
+    return [total, records.filter(record => record.type === "Day pass").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100, records.filter(record => record.type === "Membership").reduce((sum, record) => sum + Math.round(record.amount * 100), 0) / 100];
   };
   const revenueByGym = addTable("Revenue by gym", ["Gym", "Customers supplied", ...revenueHeaders, "Gym ID"]);
   const revenueGymIds = new Set([...gyms.map(gym => gym.id), ...financialRecords.map(record => record.event.gymId ?? "deleted")]);
@@ -213,11 +215,11 @@ export async function buildAdminMetricsWorkbook() {
     if (totals[0] > 0) gymTotals.push(totals[0]);
     revenueByGym.addRow([gymById.get(id)?.name ?? "Deleted gym", new Set(records.map(record => record.email.toLowerCase() || "Unknown user")).size, ...totals, id]);
   }
-  const spending = addTable("User spending", ["User email", "Total spent", "Day-pass spending", "Membership spending", "Confirmed payments"]);
+  const spending = addTable("User spending", ["User email", "Total spent", "Day-pass spending", "Membership spending"]);
   for (const email of new Set(financialRecords.map(record => record.email.toLowerCase() || "Unknown user"))) {
     spending.addRow([email, ...revenueTotals(financialRecords.filter(record => (record.email.toLowerCase() || "Unknown user") === email))]);
   }
-  const offers = addTable("Revenue by offer", ["Gym", "Type", "Offer", "Paid charges", "Revenue", "Gym ID"]);
+  const offers = addTable("Revenue by offer", ["Gym", "Type", "Offer", "Revenue", "Gym ID"]);
   type OfferGroup = { gymId: string; gym: string; type: string; offer: string; offerId: string; records: typeof financialRecords };
   const configuredOffers: OfferGroup[] = [];
   for (const gym of gyms) {
@@ -243,13 +245,13 @@ export async function buildAdminMetricsWorkbook() {
     }
   }
   for (const group of [...offerGroups.values()].sort((a, b) => revenueTotals(b.records)[0] - revenueTotals(a.records)[0] || a.gym.localeCompare(b.gym) || a.type.localeCompare(b.type) || a.offer.localeCompare(b.offer))) {
-    offers.addRow([group.gym, group.type, group.offer, group.records.length, revenueTotals(group.records)[0], group.gymId]);
+    offers.addRow([group.gym, group.type, group.offer, revenueTotals(group.records)[0], group.gymId]);
   }
   gymTotals.sort((a, b) => a - b);
   const middle = Math.floor(gymTotals.length / 2);
   const financial = addTable("Financial Metrics", ["Metric", "Value", "Meaning"]);
   financial.addRows([
-    ["Total attributed revenue", totalAttributedRevenue, "USD; gym-confirmed paid charges only"],
+    ["Total attributed revenue", totalAttributedRevenue, "USD; gym-confirmed purchases with attributed revenue"],
     ["Day-pass attributed revenue", dayPassAttributedRevenue, "USD"],
     ["Membership attributed revenue", membershipAttributedRevenue, "USD"],
     ["Revenue-generating gyms", gymTotals.length, "Gyms with positive confirmed revenue"],
@@ -257,14 +259,13 @@ export async function buildAdminMetricsWorkbook() {
     ["Average revenue per revenue-generating gym", gymTotals.length ? totalAttributedRevenue / gymTotals.length : 0, "USD"],
     ["Median revenue per revenue-generating gym", gymTotals.length ? (gymTotals.length % 2 ? gymTotals[middle] : (gymTotals[middle - 1] + gymTotals[middle]) / 2) : 0, "USD"],
     ["Paying users", payingUsers.size, "Distinct customer emails"],
-    ["Paid charges", financialRecords.length, "Gym-confirmed paid charges"],
   ]);
   const financialGrowth = addTable("Financial growth", ["Gym", "Date", "Total revenue", "Day-pass revenue", "Membership revenue", "Customers supplied", "Gym ID"]);
   for (const id of ["all", ...revenueGymIds]) {
     const records = financialRecords.filter(record => id === "all" || (record.event.gymId ?? "deleted") === id);
     const customers = new Set<string>(); let total = 0, dayPass = 0, membership = 0;
     const recordsByDate = new Map<string, typeof financialRecords>();
-    for (const record of records) { const date = day(record.event.createdAt), group = recordsByDate.get(date) ?? []; group.push(record); recordsByDate.set(date, group); }
+    for (const record of records) { const date = day(record.purchaseDate), group = recordsByDate.get(date) ?? []; group.push(record); recordsByDate.set(date, group); }
     for (const date of retainedDates) {
       for (const record of recordsByDate.get(date) ?? []) {
         const cents = Math.round(record.amount * 100); total += cents;
@@ -285,22 +286,22 @@ export async function buildAdminMetricsWorkbook() {
   }
   // Join tables at their native grain: one account/email or one stable gym ID.
   const spendByEmail = new Map<string, ExcelJS.CellValue[]>();
-  spending.eachRow((row, index) => { if (index > 1) spendByEmail.set(row.getCell(1).text.trim().toLowerCase(), Array.from({ length: 4 }, (_, column) => row.getCell(column + 2).value)); });
-  const spendingHeaders = ["Total spent", "Day-pass spending", "Membership spending", "Confirmed payments"];
+  spending.eachRow((row, index) => { if (index > 1) spendByEmail.set(row.getCell(1).text.trim().toLowerCase(), Array.from({ length: 3 }, (_, column) => row.getCell(column + 2).value)); });
+  const spendingHeaders = ["Total spent", "Day-pass spending", "Membership spending"];
   spendingHeaders.forEach((header, index) => { userSheet.getCell(1, 16 + index).value = header; });
   userSheet.eachRow((row, index) => {
     if (index === 1) return;
     const email = row.getCell(1).text.trim().toLowerCase();
-    const totals = spendByEmail.get(email) ?? [0, 0, 0, 0];
+    const totals = spendByEmail.get(email) ?? [0, 0, 0];
     totals.forEach((value, column) => { row.getCell(16 + column).value = value; });
     spendByEmail.delete(email);
   });
   for (const [email, totals] of spendByEmail) userSheet.addRow([email, "Historical spending (no matching account)", ...Array(13).fill(""), ...totals]);
 
-  const combinedGyms = addTable("Gyms", ["Gym", "Claimed", "Owner", "Claimed when", "Assigned by", "Last updated", ...Array.from({ length: 10 }, (_, i) => gymSheet.getRow(1).getCell(i + 2).text), "Gym ID"]);
+  const combinedGyms = addTable("Gyms", ["Gym", "Claimed", "Owner", "Claimed when", "Assigned by", "Last updated", ...Array.from({ length: 8 }, (_, i) => gymSheet.getRow(1).getCell(i + 2).text), "Gym ID"]);
   gyms.forEach((gym, index) => {
     const ownership = claims.getRow(index + 2), funnel = gymSheet.getRow(index + 2);
-    combinedGyms.addRow([gym.name, ...Array.from({ length: 5 }, (_, i) => ownership.getCell(i + 2).value), ...Array.from({ length: 10 }, (_, i) => funnel.getCell(i + 2).value), gym.id]);
+    combinedGyms.addRow([gym.name, ...Array.from({ length: 5 }, (_, i) => ownership.getCell(i + 2).value), ...Array.from({ length: 8 }, (_, i) => funnel.getCell(i + 2).value), gym.id]);
   });
 
   const confirmedPurchasesByGym = new Map<string, { dayPass: number; membership: number; customers: Set<string> }>();
@@ -311,21 +312,21 @@ export async function buildAdminMetricsWorkbook() {
     row.customers.add(typeof metadata?.customerEmail === "string" && metadata.customerEmail.trim() ? metadata.customerEmail.trim().toLowerCase() : actor(event));
     confirmedPurchasesByGym.set(id, row);
   }
-  const combinedFinancials = addTable("Gym financials", ["Gym", "Claimed", "Purchase source", "Customers", "Total purchases", "Day-pass purchases", "Membership purchases", "Confirmed total revenue", "Confirmed day-pass revenue", "Confirmed membership revenue", "Paid charges", "Estimated day-pass revenue", "Estimated membership revenue", "Estimated revenue opportunity", "Gym ID"]);
+  const combinedFinancials = addTable("Gym financials", ["Gym", "Claimed", "Purchase source", "Customers", "Total purchases", "Day-pass purchases", "Membership purchases", "Confirmed total revenue", "Confirmed day-pass revenue", "Confirmed membership revenue", "Estimated day-pass revenue", "Estimated membership revenue", "Estimated revenue opportunity", "Gym ID"]);
   revenueByGym.eachRow((row, index) => {
     if (index === 1) return;
-    const id = row.getCell(7).text, gym = gymById.get(id), claimed = Boolean(gym?.access.length), confirmed = confirmedPurchasesByGym.get(id), opportunity = opportunities.get(id);
+    const id = row.getCell(6).text, gym = gymById.get(id), claimed = Boolean(gym?.access.length), confirmed = confirmedPurchasesByGym.get(id), opportunity = opportunities.get(id);
     const dayPassPurchases = claimed ? confirmed?.dayPass ?? 0 : opportunity?.dayPassPurchases ?? 0;
     const membershipPurchases = claimed ? confirmed?.membership ?? 0 : opportunity?.membershipPurchases ?? 0;
     const totalPurchases = dayPassPurchases + membershipPurchases;
     combinedFinancials.addRow([
       row.getCell(1).value, claimed ? "Yes" : "No", totalPurchases ? (claimed ? "Gym confirmed" : "User reported") : "No purchases",
       claimed ? confirmed?.customers.size ?? 0 : opportunity?.customers.size ?? 0, totalPurchases, dayPassPurchases, membershipPurchases,
-      ...Array.from({ length: 4 }, (_, i) => row.getCell(i + 3).value),
+      ...Array.from({ length: 3 }, (_, i) => row.getCell(i + 3).value),
       opportunity?.dayPassEstimated ?? 0, opportunity?.membershipEstimated ?? 0, opportunity?.estimated ?? 0, id,
     ]);
   });
-  combinedFinancials.getColumn(15).hidden = true;
+  combinedFinancials.getColumn(14).hidden = true;
 
   summary.getCell("F1").value = "Period";
   summary.getCell("G1").value = "Meaning";

@@ -22,3 +22,8 @@ export function easternTimestampText(value: string | Date) {
   const { fields: p } = parts(value);
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}:${p.second} ${p.timeZoneName}`;
 }
+
+export function easternDateKey(value: string | Date) {
+  const { fields: p } = parts(value);
+  return `${p.year}-${p.month}-${p.day}`;
+}

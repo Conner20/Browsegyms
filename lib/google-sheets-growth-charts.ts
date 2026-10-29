@@ -25,7 +25,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       { repeatCell: { range: range(0, 2, 0, 8), cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { fontFamily: "Arial", fontSize: 11 }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
       { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 2 }, properties: { pixelSize: 42 }, fields: "pixelSize" } },
     );
-    if (!financial) requests.push({ updateCells: { range: range(0, 2, 0, 1), rows: [{ values: [textCell("User and demand growth")] }, { values: [textCell("Cumulative totals · UTC")] }], fields: "userEnteredValue" } });
+    if (!financial) requests.push({ updateCells: { range: range(0, 2, 0, 1), rows: [{ values: [textCell("User and demand growth")] }, { values: [textCell("Cumulative totals · DC time")] }], fields: "userEnteredValue" } });
     if (financial) {
       const gyms = new Map<string, string>();
       for (const row of data.values.slice(1)) if (row[6] !== "all") gyms.set(String(row[6]), String(row[0]));
@@ -40,7 +40,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       chartEnd = chartStart + Math.max(2, new Set(data.values.slice(1).map(row => row[1])).size + 1);
       requests.push(
         { updateCells: { range: range(0, 1, 0, 2), rows: [{ values: [textCell("Choose gym →"), textCell(selected)] }], fields: "userEnteredValue" } },
-        { updateCells: { range: range(1, 2, 0, 2), rows: [{ values: [textCell("Cumulative totals · UTC")] }], fields: "userEnteredValue" } },
+        { updateCells: { range: range(1, 2, 0, 2), rows: [{ values: [textCell("Cumulative totals · DC time")] }], fields: "userEnteredValue" } },
         { updateCells: { range: range(0, lastOptionRow, 17, 19), rows: [["Gym selection", "Gym ID"], ...options].map(row => ({ values: row.map(textCell) })), fields: "userEnteredValue" } },
         { setDataValidation: { range: range(0, 1, 1, 2), rule: { condition: { type: "ONE_OF_RANGE", values: [{ userEnteredValue: `='Financial growth'!$R$2:$R$${lastOptionRow}` }] }, strict: true, showCustomUi: true, inputMessage: "Choose All gyms or a single gym." } } },
         { updateCells: { range: range(27, 28, 9, 14), rows: [{ values: data.values[0].slice(1, 6).map(value => textCell(String(value))) }], fields: "userEnteredValue" } },
@@ -105,7 +105,7 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       basicChart: {
         chartType: "LINE", legendPosition: "BOTTOM_LEGEND", headerCount: 1, interpolateNulls: false,
         axis: [
-          { position: "BOTTOM_AXIS", title: "Date (UTC)" },
+          { position: "BOTTOM_AXIS", title: "Date (DC time)" },
           { position: "LEFT_AXIS", title: financial ? "Revenue (USD)" : "Cumulative users and activity" },
           ...(financial ? [{ position: "RIGHT_AXIS", title: "Customers supplied" }] : []),
         ],
