@@ -46,7 +46,8 @@ export async function buildAdminMetricsWorkbook() {
   const confirmedPurchaseEvents = [...resolvedDayPasses.values(), ...resolvedMemberships.values()];
   const financialRecords = confirmedPurchaseEvents.map(event => {
     const metadata=event.metadata as Record<string,unknown>|null,type=event.eventType==="DAY_PASS_GYM_CONFIRMED"?"Day pass":"Membership",clickType=type==="Day pass"?"DAY_PASS_CLICKED":"MEMBERSHIP_CLICKED",clickId=confirmedClickId(event,clickType),click=events.find(item=>item.id===clickId),amount=typeof metadata?.attributedAmount==="number"&&Number.isFinite(metadata.attributedAmount)?Math.max(0,Math.round(metadata.attributedAmount*100)/100):0;
-    return { event, purchaseDate:click?.createdAt??event.createdAt, type, amount, email:typeof metadata?.customerEmail==="string"?metadata.customerEmail:event.user?.email??"", offer:typeof metadata?.offerName==="string"?metadata.offerName:type, offerId:typeof metadata?.offerId==="string"?metadata.offerId:"" };
+    const clickMetadata=click?.metadata as Record<string,unknown>|null,offerPrice=typeof clickMetadata?.price==="number"&&Number.isFinite(clickMetadata.price)?Math.max(0,clickMetadata.price):amount;
+    return { event, purchaseDate:click?.createdAt??event.createdAt, type, amount, offerPrice, email:typeof metadata?.customerEmail==="string"?metadata.customerEmail:event.user?.email??"", offer:typeof metadata?.offerName==="string"?metadata.offerName:type, offerId:typeof metadata?.offerId==="string"?metadata.offerId:"" };
   }).filter(record=>record.amount>0);
   const dayPassAttributedRevenue=financialRecords.filter(record=>record.type==="Day pass").reduce((sum,record)=>sum+record.amount,0),membershipAttributedRevenue=financialRecords.filter(record=>record.type==="Membership").reduce((sum,record)=>sum+record.amount,0),totalAttributedRevenue=dayPassAttributedRevenue+membershipAttributedRevenue;
   const payingUsers = new Set(financialRecords.map(record => record.email.trim().toLowerCase()).filter(Boolean));
@@ -219,16 +220,16 @@ export async function buildAdminMetricsWorkbook() {
   for (const email of new Set(financialRecords.map(record => record.email.toLowerCase() || "Unknown user"))) {
     spending.addRow([email, ...revenueTotals(financialRecords.filter(record => (record.email.toLowerCase() || "Unknown user") === email))]);
   }
-  const offers = addTable("Revenue by offer", ["Gym", "Type", "Offer", "Revenue", "Gym ID"]);
-  type OfferGroup = { gymId: string; gym: string; type: string; offer: string; offerId: string; records: typeof financialRecords };
+  const offers = addTable("Revenue by offer", ["Gym", "Type", "Offer", "Offer price", "Revenue", "Gym ID"]);
+  type OfferGroup = { gymId: string; gym: string; type: string; offer: string; offerId: string; price: number; records: typeof financialRecords };
   const configuredOffers: OfferGroup[] = [];
   for (const gym of gyms) {
     const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
     if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: "", access: [] });
-    for (const option of dayPassOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Day pass", offer: `${option.durationDays}-day pass`, offerId: option.id, records: [] });
+    for (const option of dayPassOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Day pass", offer: `${option.durationDays}-day pass`, offerId: option.id, price: option.price, records: [] });
     const membershipOptions = cleanMembershipOptions(gym.membershipOptions);
     if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push({ ...cleanMembershipOptions([{ id: "legacy-membership", name: "Membership", price: gym.membershipPrice }])[0] });
-    for (const option of membershipOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Membership", offer: option.name || "Membership", offerId: option.id, records: [] });
+    for (const option of membershipOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Membership", offer: option.name || "Membership", offerId: option.id, price: option.price, records: [] });
   }
   const offerGroups = new Map(configuredOffers.map((group, index) => [`configured:${index}`, group]));
   for (const record of financialRecords) {
@@ -240,12 +241,12 @@ export async function buildAdminMetricsWorkbook() {
     if (configured) configured.records.push(record);
     else {
       const key = JSON.stringify([gymId, record.type, record.offerId || normalizedName]);
-      const group: OfferGroup = offerGroups.get(key) ?? { gymId, gym: record.event.gym?.name ?? "Deleted gym", type: record.type, offer: record.offer, offerId: record.offerId, records: [] };
+      const group: OfferGroup = offerGroups.get(key) ?? { gymId, gym: record.event.gym?.name ?? "Deleted gym", type: record.type, offer: record.offer, offerId: record.offerId, price: record.offerPrice, records: [] };
       group.records.push(record); offerGroups.set(key, group);
     }
   }
   for (const group of [...offerGroups.values()].sort((a, b) => revenueTotals(b.records)[0] - revenueTotals(a.records)[0] || a.gym.localeCompare(b.gym) || a.type.localeCompare(b.type) || a.offer.localeCompare(b.offer))) {
-    offers.addRow([group.gym, group.type, group.offer, revenueTotals(group.records)[0], group.gymId]);
+    offers.addRow([group.gym, group.type, group.offer, group.price, revenueTotals(group.records)[0], group.gymId]);
   }
   gymTotals.sort((a, b) => a - b);
   const middle = Math.floor(gymTotals.length / 2);
@@ -358,7 +359,7 @@ export async function buildAdminMetricsWorkbook() {
     });
     source.columns.forEach(column => {
       const header = String(source.getRow(1).getCell(column.number!).value);
-      if (/revenue|spending|spent|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) column.numFmt = '"$"#,##0.00';
+      if (/revenue|spending|spent|price|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) column.numFmt = '"$"#,##0.00';
       if (/rate/i.test(header)) column.numFmt = '0.0"%"';
       column.eachCell?.({ includeEmpty: false }, cell => { if (cell.numFmt === EASTERN_TIMESTAMP_FORMAT) column.width = 32; });
     });

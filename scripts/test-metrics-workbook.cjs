@@ -72,7 +72,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   const claimedPendingBook = await buildAdminMetricsWorkbook();
   assert.deepEqual(rows(claimedPendingBook.getWorksheet('Gym financials')).find(row => row[0] === 'Alpha Gym').slice(10, 13), [15, 0, 15], 'claimed gyms include unanswered user-reported purchases as estimated opportunity');
   events = baselineEvents;
-  assert.deepEqual(rows(book.getWorksheet('Revenue by offer')), [['Alpha Gym', 'Day pass', '1-day pass', 12, 'g1'], ['Beta Gym', 'Membership', 'Basic membership', 0, 'g2']], 'configured zero-revenue offers remain visible');
+  assert.deepEqual(rows(book.getWorksheet('Revenue by offer')), [['Alpha Gym', 'Day pass', '1-day pass', 12, 12, 'g1'], ['Beta Gym', 'Membership', 'Basic membership', 30, 0, 'g2']], 'configured offers retain price even with zero revenue');
   events = [
     { ...event('late-dc-click', 'DAY_PASS_CLICKED', 'g1', { price: 12 }), createdAt: new Date('2026-07-15T03:30:00Z') },
     { ...event('later-confirmation', 'DAY_PASS_GYM_CONFIRMED', 'g1', { claimClickId: 'late-dc-click', attributedAmount: 12, customerEmail: users[0].email }), visitId: 'gym-confirm:late-dc-click', createdAt: new Date('2026-07-15T15:00:00Z') },

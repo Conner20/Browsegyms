@@ -39,7 +39,7 @@ export default function GymConversionReview({ initialRows }: { initialRows: Conv
     setRows(current => current.map(row => row.status === "check_later" ? { ...row, status: decisions[row.id], confirmedAt: submittedAt } : row));
     setDecisions({});
     setHistoryPage(1);
-    setMessage("Referral confirmations saved. You may now exit this page.");
+    setMessage("Referral confirmations saved.");
   };
   const removeConfirmation = async (row: ConversionReviewRow) => {
     setDeletingId(row.id);
