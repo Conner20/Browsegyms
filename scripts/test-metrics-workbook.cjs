@@ -172,6 +172,7 @@ const rows = sheet => sheet.getSheetValues().slice(2).map(row => row.slice(1));
   assert(writes.some(write => write.range === "'User and demand growth'!A28"));
   assert.equal(selectedClaimGym, 'Select a gym');
   const claimId = metadata.sheets.find(sheet => sheet.properties.title === 'Gym claim clicks').properties.sheetId;
+  for (const column of [6, 8]) assert(requests.some(request => request.repeatCell?.range.sheetId === claimId && request.repeatCell.range.startColumnIndex === column && request.repeatCell.cell.userEnteredFormat?.numberFormat?.type === 'DATE_TIME'), `claim response column ${column + 1} is formatted as a timestamp`);
   const claimFormula = requests.find(request => request.updateCells?.range.sheetId === claimId && request.updateCells.range.startRowIndex === 5).updateCells.rows[0].values[0].userEnteredValue.formulaValue;
   assert(claimFormula.includes('FILTER($U$6:$AC$') && claimFormula.includes('$AD$6:$AD$') && claimFormula.includes('VLOOKUP($B$1,'));
   assert(writes.some(write => write.range === "'Gym claim clicks'!U5"));

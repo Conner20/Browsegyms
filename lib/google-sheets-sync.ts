@@ -78,7 +78,7 @@ function worksheetValues(workbook: ExcelJS.Workbook): SheetValues[] {
     const values: (string | number | boolean)[][] = [];
     const headers = Array.from({ length: columns }, (_, index) => sheet.getRow(1).getCell(index + 1).text);
     const formats = headers.map(header => {
-      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed when|Claimed at|Clicked|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : EASTERN_TIMESTAMP_FORMAT };
+      if (/^(Date|Created|Email verified|Last active|Last updated|Deleted at|Claimed when|Claimed at|Clicked|Clicked at|Confirmed at|Signed up at|Timestamp|Confirmation timestamp|User confirmed at|Gym confirmed at|User responded at|Gym responded at|Billing period start|Billing period end)$/.test(header)) return { type: header === "Date" || header.startsWith("Billing") ? "DATE" : "DATE_TIME", pattern: header === "Date" || header.startsWith("Billing") ? "mmm d, yyyy" : EASTERN_TIMESTAMP_FORMAT };
       if (/revenue|spending|spent|price|charge$|payment$|MRR|Monthly recurring/i.test(header) && !/charges/i.test(header)) return { type: "CURRENCY", pattern: '"$"#,##0.00' };
       if (/rate/i.test(header)) return { type: "NUMBER", pattern: '0.0"%"' };
       return null;
