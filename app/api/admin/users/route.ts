@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { compare } from "bcrypt";
 import { authOptions } from "@/lib/auth";
 import { getUserAdminStatus,hasAdminAccessByEmail,hasSuperAdminAccessByEmail,isConfiguredAdminEmail } from "@/lib/admin";
+import { syncAdminMetricsToGoogleSheets } from "@/lib/google-sheets-sync";
 import { db } from "@/prisma/client";
 
 export async function GET(request:Request){
@@ -48,6 +49,24 @@ export async function PATCH(request: Request) {
 
     await db.$transaction(async tx => {
       for (const target of targets) {
+        // LandingEvent.userId uses ON DELETE SET NULL so analytics would
+        // otherwise survive a permanent account deletion. Include events
+        // captured before login by removing the visitor histories that were
+        // subsequently linked to this account as well.
+        const identifiedVisitors = await tx.landingEvent.findMany({
+          where: { userId: target.id },
+          select: { visitorId: true },
+          distinct: ["visitorId"],
+        });
+        const visitorIds = identifiedVisitors.map(event => event.visitorId);
+        await tx.landingEvent.deleteMany({
+          where: {
+            OR: [
+              { userId: target.id },
+              ...(visitorIds.length ? [{ visitorId: { in: visitorIds }, userId: null }] : []),
+            ],
+          },
+        });
         if (target.email) {
           await tx.verificationToken.deleteMany({ where: { identifier: target.email } });
           await tx.pendingSignup.deleteMany({ where: { email: target.email } });
@@ -65,7 +84,17 @@ export async function PATCH(request: Request) {
         await tx.user.delete({ where: { id: target.id } });
       }
     });
-    return NextResponse.json({ ok: true, count: targets.length });
+    // Reflect the deletion in Browse Gyms Metrics immediately instead of
+    // waiting for the next scheduled sync. A later cron run remains a safe
+    // fallback if Google is temporarily unavailable.
+    let metricsSynced = true;
+    try {
+      await syncAdminMetricsToGoogleSheets();
+    } catch (error) {
+      metricsSynced = false;
+      console.error("Browse Gyms metrics refresh after permanent user deletion failed", error);
+    }
+    return NextResponse.json({ ok: true, count: targets.length, metricsSynced });
   }
   if (body.action === "recoverUsers") {
     if (!session?.user?.email || !(await hasSuperAdminAccessByEmail(session.user.email))) return NextResponse.json({ error: "Only the superadmin can recover accounts." }, { status: 403 });

@@ -1,7 +1,7 @@
 import { overviewPeriodRequests } from "@/lib/google-sheets-overview";
 import { claimClickRequests, CLAIM_CLICKS_TITLE, CLAIM_GYM_SELECTION_RANGE } from "@/lib/google-sheets-claim-clicks";
 import { EASTERN_TIMESTAMP_FORMAT, METRICS_TIME_ZONE, easternTimestampSerial } from "@/lib/metrics-reporting-time";
-import { growthChartRequests, FINANCIAL_SELECTION_RANGE, GROWTH_METRIC_SELECTION_RANGES } from "@/lib/google-sheets-growth-charts";
+import { growthChartRequests, FINANCIAL_PERIOD_SELECTION_RANGE, FINANCIAL_SELECTION_RANGE, GROWTH_METRIC_SELECTION_RANGES, USER_DEMAND_PERIOD_SELECTION_RANGE } from "@/lib/google-sheets-growth-charts";
 import { createSign } from "node:crypto";
 import type ExcelJS from "exceljs";
 import { buildAdminMetricsWorkbook } from "@/lib/admin-metrics-workbook";
@@ -112,7 +112,7 @@ function valueChunks(sheet: SheetValues) {
       bytes += rowBytes;
       end += 1;
     }
-    chunks.push({ range: `${quoteSheet(sheet.title)}!${sheet.title === "Financial growth" ? "AD" : sheet.title === CLAIM_CLICKS_TITLE ? "U" : sheet.title === "Overview" ? "J" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
+    chunks.push({ range: `${quoteSheet(sheet.title)}!${["Financial growth", "User and demand growth"].includes(sheet.title) ? "AD" : sheet.title === CLAIM_CLICKS_TITLE ? "U" : sheet.title === "Overview" ? "J" : "A"}${sheet.startRow + start + 1}`, majorDimension: "ROWS", values: sheet.values.slice(start, end) });
     start = end;
   }
   return chunks;
@@ -134,6 +134,8 @@ export async function syncAdminMetricsToGoogleSheets() {
     { key: "overviewPeriod", title: "Overview", range: "'Overview'!B1" },
     { key: "claimGym", title: CLAIM_CLICKS_TITLE, range: CLAIM_GYM_SELECTION_RANGE },
     { key: "gym", title: "Financial growth", range: FINANCIAL_SELECTION_RANGE },
+    { key: "Financial growth:period", title: "Financial growth", range: FINANCIAL_PERIOD_SELECTION_RANGE },
+    { key: "User and demand growth:period", title: "User and demand growth", range: USER_DEMAND_PERIOD_SELECTION_RANGE },
     ...Object.entries(GROWTH_METRIC_SELECTION_RANGES).map(([title, range]) => ({ key: title, title, range })),
   ].filter(control => metadata.sheets?.some(sheet => sheet.properties?.title === control.title));
   const selections = await Promise.all(controls.map(async control => {
@@ -154,7 +156,7 @@ export async function syncAdminMetricsToGoogleSheets() {
   const existingTitles = new Set((metadata.sheets ?? []).map(sheet => sheet.properties?.title).filter(Boolean));
   const missing = sheets.filter(sheet => !existingTitles.has(sheet.title));
   if (missing.length) {
-    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.title === CLAIM_CLICKS_TITLE ? 38 : sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
+    await googleRequest(`${baseUrl}:batchUpdate`, token, { method: "POST", body: JSON.stringify({ requests: missing.map(sheet => ({ addSheet: { properties: { title: sheet.title, gridProperties: { rowCount: Math.max(1_000, sheet.rows + sheet.startRow + 30), columnCount: Math.max(sheet.title === CLAIM_CLICKS_TITLE ? 38 : ["Financial growth", "User and demand growth"].includes(sheet.title) ? 37 : sheet.startRow ? 28 : 26, sheet.columns) } } } })) }) });
     metadata = await googleRequest<SpreadsheetMetadata>(`${baseUrl}?fields=sheets(properties,bandedRanges.bandedRangeId,charts(chartId,spec.altText))`, token);
   }
 
@@ -163,10 +165,10 @@ export async function syncAdminMetricsToGoogleSheets() {
     const properties = propertiesByTitle.get(sheet.title);
     if (!properties || properties.sheetId === undefined) throw new Error(`Google Sheet tab was not created: ${sheet.title}`);
     const rowCount = Math.max(properties.gridProperties?.rowCount ?? 0, sheet.rows + sheet.startRow + 30, sheet.title === CLAIM_CLICKS_TITLE ? (sheets.find(item => item.title === "Gym financials")?.rows ?? 0) + 1 : 0, 1_000);
-    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === CLAIM_CLICKS_TITLE ? 38 : sheet.title === "Financial growth" ? 37 : sheet.startRow ? 28 : 26);
+    const columnCount = Math.max(properties.gridProperties?.columnCount ?? 0, sheet.columns, sheet.title === CLAIM_CLICKS_TITLE ? 38 : ["Financial growth", "User and demand growth"].includes(sheet.title) ? 37 : sheet.startRow ? 28 : 26);
     const sheetId = properties.sheetId;
     const tableRows = sheet.title === "Financial growth" ? new Set(sheet.values.slice(1).map(row => row[1])).size + 1 : sheet.rows;
-    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 9 : sheet.title === "Financial growth" ? 5 : sheet.title === "Overview" ? 4 : sheet.columns;
+    const tableColumns = sheet.title === CLAIM_CLICKS_TITLE ? 9 : sheet.title === "Financial growth" ? 5 : sheet.title === "Overview" ? 3 : sheet.columns;
     const range = { sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + Math.max(2, tableRows), startColumnIndex: 0, endColumnIndex: tableColumns };
     return [
       { updateSheetProperties: { properties: { sheetId, index, hidden: sheet.hidden, gridProperties: { rowCount, columnCount, frozenRowCount: sheet.title === CLAIM_CLICKS_TITLE ? 5 : sheet.startRow ? 2 : 1, frozenColumnCount: 1, hideGridlines: true } }, fields: "index,hidden,gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,hideGridlines)" } },
@@ -179,7 +181,7 @@ export async function syncAdminMetricsToGoogleSheets() {
       ...(metadata.sheets?.find(item => item.properties?.sheetId === sheetId)?.bandedRanges ?? []).map(band => ({ deleteBanding: { bandedRangeId: band.bandedRangeId } })),
       { addBanding: { bandedRange: { range, rowProperties: { headerColor: { red: 0.133, green: 0.773, blue: 0.369 }, firstBandColor: { red: 1, green: 1, blue: 1 }, secondBandColor: { red: 0.94, green: 0.99, blue: 0.96 } } } } },
       { repeatCell: { range: { sheetId: properties.sheetId, startRowIndex: sheet.startRow, endRowIndex: sheet.startRow + 1, startColumnIndex: 0, endColumnIndex: tableColumns }, cell: { userEnteredFormat: { wrapStrategy: "WRAP", backgroundColor: { red: 0.133, green: 0.773, blue: 0.369 }, textFormat: { bold: true, foregroundColor: { red: 0, green: 0, blue: 0 } } } }, fields: "userEnteredFormat(backgroundColor,textFormat,wrapStrategy)" } },
-      ["Financial growth", CLAIM_CLICKS_TITLE, "Overview"].includes(sheet.title) ? { clearBasicFilter: { sheetId } } : { setBasicFilter: { filter: { range } } },
+      ["Financial growth", "User and demand growth", CLAIM_CLICKS_TITLE, "Overview"].includes(sheet.title) ? { clearBasicFilter: { sheetId } } : { setBasicFilter: { filter: { range } } },
     ];
   })];
 

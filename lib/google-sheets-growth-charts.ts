@@ -4,6 +4,9 @@ export type ChartSheet = { properties?: { sheetId?: number; title?: string }; ch
 const FINANCIAL = "Financial growth";
 const DEMAND = "User and demand growth";
 export const FINANCIAL_SELECTION_RANGE = "'Financial growth'!B1";
+export const FINANCIAL_PERIOD_SELECTION_RANGE = "'Financial growth'!H1";
+export const USER_DEMAND_PERIOD_SELECTION_RANGE = "'User and demand growth'!B1";
+export const USER_DEMAND_PERIODS = ["1W", "1M", "3M", "1Y", "All time"];
 
 export const GROWTH_METRIC_SELECTION_RANGES: Record<string, string> = {
   [FINANCIAL]: "'Financial growth'!E1",
@@ -25,7 +28,28 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       { repeatCell: { range: range(0, 2, 0, 8), cell: { userEnteredFormat: { backgroundColor: { red: 1, green: 1, blue: 1 }, textFormat: { fontFamily: "Arial", fontSize: 11 }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
       { updateDimensionProperties: { range: { sheetId, dimension: "ROWS", startIndex: 0, endIndex: 2 }, properties: { pixelSize: 42 }, fields: "pixelSize" } },
     );
-    if (!financial) requests.push({ updateCells: { range: range(0, 2, 0, 1), rows: [{ values: [textCell("User and demand growth")] }, { values: [textCell("Cumulative totals · DC time")] }], fields: "userEnteredValue" } });
+    if (!financial) {
+      const periodKey = `${DEMAND}:period`;
+      const selectedPeriod = USER_DEMAND_PERIODS.includes(previousMetrics[periodKey]) ? previousMetrics[periodKey] : "All time";
+      const sourceEnd = 27 + Math.max(2, data.rows);
+      const cutoff = `IF($B$1="All time",0,SWITCH($B$1,"1W",TODAY()-6,"1M",EDATE(TODAY(),-1),"3M",EDATE(TODAY(),-3),"1Y",EDATE(TODAY(),-12),0))`;
+      const filtered = `FILTER($AD$29:$AK$${sourceEnd},$AD$29:$AD$${sourceEnd}>=${cutoff})`;
+      chartStart = 27; firstColumn = 9; chartEnd = sourceEnd;
+      requests.push(
+        { updateCells: { range: range(0, 1, 0, 2), rows: [{ values: [textCell("Choose period →"), textCell(selectedPeriod)] }], fields: "userEnteredValue" } },
+        { updateCells: { range: range(1, 2, 0, 2), rows: [{ values: [textCell("Cumulative totals · DC time")] }], fields: "userEnteredValue" } },
+        { setDataValidation: { range: range(0, 1, 1, 2), rule: { condition: { type: "ONE_OF_LIST", values: USER_DEMAND_PERIODS.map(userEnteredValue => ({ userEnteredValue })) }, strict: true, showCustomUi: true, inputMessage: "Choose how much recent history to display." } } },
+        { repeatCell: { range: range(0, 1, 1, 2), cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.98, blue: 0.9 }, textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
+        { updateCells: { range: range(27, 28, 9, 17), rows: [{ values: data.values[0].map(value => textCell(String(value))) }], fields: "userEnteredValue" } },
+        { updateCells: { range: range(28, 29, 9, 10), rows: [{ values: [{ userEnteredValue: { formulaValue: `=IFERROR(SORT(${filtered},1,TRUE),"")` } }] }], fields: "userEnteredValue" } },
+        { updateCells: { range: range(27, 28, 0, 1), rows: [{ values: [{ userEnteredValue: { formulaValue: `=IFERROR({$J$28:$Q$28;FILTER($J$29:$Q$${chartEnd},$J$29:$J$${chartEnd}<>"")},"")` } }] }], fields: "userEnteredValue" } },
+        { clearBasicFilter: { sheetId } },
+        { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 9, endIndex: 17 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
+        { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 29, endIndex: 37 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
+        { repeatCell: { range: range(28, chartEnd, 0, 1), cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "mmm d, yyyy" } } }, fields: "userEnteredFormat.numberFormat" } },
+        { repeatCell: { range: range(28, chartEnd, 9, 10), cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "mmm d, yyyy" } } }, fields: "userEnteredFormat.numberFormat" } },
+      );
+    }
     if (financial) {
       const gyms = new Map<string, string>();
       for (const row of data.values.slice(1)) if (row[6] !== "all") gyms.set(String(row[6]), String(row[0]));
@@ -33,9 +57,11 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
       // IDs disambiguate gyms with the same display name without exposing IDs normally.
       const options = [["All gyms", "all"], ...[...gyms].sort((a, b) => a[1].localeCompare(b[1])).map(([id, name]) => [name === "All gyms" || names.filter(value => value === name).length > 1 ? `${name} [${id}]` : name, id])];
       const selected = options.some(([label]) => label === previousSelection) ? previousSelection! : "All gyms";
+      const selectedPeriod = USER_DEMAND_PERIODS.includes(previousMetrics[`${FINANCIAL}:period`]) ? previousMetrics[`${FINANCIAL}:period`] : "All time";
       const lastOptionRow = options.length + 1;
       const sourceEnd = 27 + Math.max(2, data.rows);
-      const formula = `=IFERROR(SORT(FILTER($AE$29:$AI$${sourceEnd},$AJ$29:$AJ$${sourceEnd}=IFERROR(VLOOKUP($B$1,$R$2:$S$${lastOptionRow},2,FALSE),"all")),1,TRUE),"")`;
+      const cutoff = `IF($H$1="All time",0,SWITCH($H$1,"1W",TODAY()-6,"1M",EDATE(TODAY(),-1),"3M",EDATE(TODAY(),-3),"1Y",EDATE(TODAY(),-12),0))`;
+      const formula = `=IFERROR(SORT(FILTER($AE$29:$AI$${sourceEnd},$AJ$29:$AJ$${sourceEnd}=IFERROR(VLOOKUP($B$1,$R$2:$S$${lastOptionRow},2,FALSE),"all"),$AE$29:$AE$${sourceEnd}>=${cutoff}),1,TRUE),"")`;
       chartStart = 27; firstColumn = 9;
       chartEnd = chartStart + Math.max(2, new Set(data.values.slice(1).map(row => row[1])).size + 1);
       requests.push(
@@ -43,12 +69,15 @@ export function growthChartRequests(sheets: GrowthSheet[], metadata: ChartSheet[
         { updateCells: { range: range(1, 2, 0, 2), rows: [{ values: [textCell("Cumulative totals · DC time")] }], fields: "userEnteredValue" } },
         { updateCells: { range: range(0, lastOptionRow, 17, 19), rows: [["Gym selection", "Gym ID"], ...options].map(row => ({ values: row.map(textCell) })), fields: "userEnteredValue" } },
         { setDataValidation: { range: range(0, 1, 1, 2), rule: { condition: { type: "ONE_OF_RANGE", values: [{ userEnteredValue: `='Financial growth'!$R$2:$R$${lastOptionRow}` }] }, strict: true, showCustomUi: true, inputMessage: "Choose All gyms or a single gym." } } },
+        { updateCells: { range: range(0, 1, 6, 8), rows: [{ values: [textCell("Choose period →"), textCell(selectedPeriod)] }], fields: "userEnteredValue" } },
+        { setDataValidation: { range: range(0, 1, 7, 8), rule: { condition: { type: "ONE_OF_LIST", values: USER_DEMAND_PERIODS.map(userEnteredValue => ({ userEnteredValue })) }, strict: true, showCustomUi: true, inputMessage: "Choose how much recent history to display." } } },
         { updateCells: { range: range(27, 28, 9, 14), rows: [{ values: data.values[0].slice(1, 6).map(value => textCell(String(value))) }], fields: "userEnteredValue" } },
         { updateCells: { range: range(28, 29, 9, 10), rows: [{ values: [{ userEnteredValue: { formulaValue: formula } }] }], fields: "userEnteredValue" } },
         { updateDimensionProperties: { range: { sheetId, dimension: "COLUMNS", startIndex: 9, endIndex: 19 }, properties: { hiddenByUser: true }, fields: "hiddenByUser" } },
         { repeatCell: { range: range(28, chartEnd, 9, 10), cell: { userEnteredFormat: { numberFormat: { type: "DATE", pattern: "mmm d, yyyy" } } }, fields: "userEnteredFormat.numberFormat" } },
         { repeatCell: { range: range(28, chartEnd, 10, 13), cell: { userEnteredFormat: { numberFormat: { type: "CURRENCY", pattern: '"$"#,##0.00' } } }, fields: "userEnteredFormat.numberFormat" } },
         { repeatCell: { range: range(0, 1, 1, 2), cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.98, blue: 0.9 }, textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
+        { repeatCell: { range: range(0, 1, 7, 8), cell: { userEnteredFormat: { backgroundColor: { red: 0.86, green: 0.98, blue: 0.9 }, textFormat: { bold: true }, wrapStrategy: "WRAP" } }, fields: "userEnteredFormat" } },
       );
     }
     const metricNames = data.values[0].slice(financial ? 2 : 1, financial ? 6 : 8).map(String);

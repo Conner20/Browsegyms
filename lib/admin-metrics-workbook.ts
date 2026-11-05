@@ -330,10 +330,9 @@ export async function buildAdminMetricsWorkbook() {
   combinedFinancials.getColumn(14).hidden = true;
 
   summary.getCell("F1").value = "Period";
-  summary.getCell("G1").value = "Meaning";
   summary.eachRow((row, index) => { if (index > 1) row.getCell(6).value = "Selectable"; });
   summary.addRow(["Financial metrics", "", "", "", "", "All time"]);
-  financial.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time", row.getCell(3).value]); });
+  financial.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time"]); });
   const tabOrder = ["Overview", "Users", "User and demand growth", "Gyms", "Gym claim clicks", "Gym financials", "Financial growth", "Revenue by offer", "Popular cities", "Filter usage"];
   const ordered = new ExcelJS.Workbook();
   ordered.creator = workbook.creator; ordered.created = workbook.created; ordered.modified = workbook.modified;
