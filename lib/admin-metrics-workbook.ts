@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import { getUserAdminStatus } from "@/lib/admin";
 import { db } from "@/prisma/client";
 import { membershipInitialCharge, membershipTermsFromMetadata } from "@/lib/membership-attribution";
-import { cleanMembershipOptions } from "@/lib/memberships";
+import { annualFeeTimingLabel, billingFrequencyLabel, cleanMembershipOptions, contractLengthLabel } from "@/lib/memberships";
 import { cleanDayPassOptions } from "@/lib/day-passes";
 
 const day = (date: Date) => easternDateKey(date);
@@ -20,7 +20,7 @@ export async function buildAdminMetricsWorkbook() {
   const [events, users, gyms, latestReset] = await Promise.all([
     db.landingEvent.findMany({ where: { eventType: { not: "METRICS_RESET" } }, select: { id: true, eventType: true, visitorId: true, visitId: true, path: true, gymId: true, userId: true, metadata: true, durationMs: true, createdAt: true, gym: { select: { name: true } }, user: { select: { email: true } } }, orderBy: { createdAt: "asc" } }),
     db.user.findMany({ where: { emailVerified: { not: null } }, select: { id: true, email: true, role: true, isAdmin: true, createdAt: true, emailVerified: true, lastLoginAt: true, deletedAt: true, gymAccesses: { select: { gym: { select: { id: true, name: true } } } } }, orderBy: { createdAt: "asc" } }),
-    db.gym.findMany({ select: { id: true, name: true, isPublished: true, contactEmail: true, dayPassPrice: true, dayPassDetails: true, dayPassOptions: true, membershipPrice: true, membershipOptions: true, createdAt: true, updatedAt: true, access: { orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true, assignedByEmail: true, user: { select: { email: true } } } } }, orderBy: { name: "asc" } }),
+    db.gym.findMany({ select: { id: true, name: true, address: true, city: true, state: true, country: true, lat: true, lng: true, phone: true, contactEmail: true, website: true, gymType: true, hours: true, amenities: true, equipment: true, isPublished: true, dayPassPrice: true, dayPassDetails: true, dayPassUrl: true, dayPassOptions: true, membershipPrice: true, membershipDetails: true, membershipOptions: true, createdAt: true, updatedAt: true, access: { orderBy: { createdAt: "asc" }, take: 1, select: { createdAt: true, assignedByEmail: true, user: { select: { email: true } } } } }, orderBy: { name: "asc" } }),
     db.landingEvent.findFirst({ where: { eventType: "METRICS_RESET" }, orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
   ]);
 
@@ -329,11 +329,38 @@ export async function buildAdminMetricsWorkbook() {
   });
   combinedFinancials.getColumn(14).hidden = true;
 
+  const money = (value: number) => `$${value.toFixed(2)}`;
+  const gymListings = addTable("Gym Listings", ["Gym name", "Address", "City", "State", "Country", "Latitude", "Longitude", "Phone", "Email", "Website", "Gym type", "Hours", "Amenities", "Equipment", "Day-pass options", "Membership options", "Published", "Gym ID"]);
+  for (const gym of gyms) {
+    const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
+    if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: gym.dayPassUrl ?? "", access: gym.amenities });
+    const membershipOptions = cleanMembershipOptions(gym.membershipOptions);
+    if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push(cleanMembershipOptions([{ name: "Membership", price: gym.membershipPrice, purchaseUrl: gym.website, notes: gym.membershipDetails ?? "" }])[0]);
+    const dayPassText = dayPassOptions.map((option, index) => [
+      `Option ${index + 1}: ${option.durationDays}-day pass`,
+      `Price: ${money(option.price)}`,
+      `Purchase URL: ${option.purchaseUrl || "Not provided"}`,
+      `Access: ${option.access.join(", ") || "None listed"}`,
+    ].join("\n")).join("\n\n");
+    const membershipText = membershipOptions.map((option, index) => [
+      `Option ${index + 1}: ${option.name || "Membership"}`,
+      `Price: ${money(option.price)} · Billing: ${billingFrequencyLabel(option)} · Contract: ${contractLengthLabel(option)}`,
+      `Enrollment fee: ${money(option.enrollmentFee)} · Annual fee: ${money(option.annualFee)}${option.annualFee > 0 ? ` (${annualFeeTimingLabel(option)})` : ""}`,
+      `Additional fees: ${money(option.additionalFees)}${option.additionalFeesDetails ? ` (${option.additionalFeesDetails})` : ""}`,
+      `Guest passes: ${option.guestPassesEnabled ? `${option.guestPassCount} per ${option.guestPassFrequency}` : "No"}`,
+      `Access: ${option.access.join(", ") || "None listed"}`,
+      `Purchase URL: ${option.purchaseUrl || "Not provided"}`,
+      `Notes: ${option.notes || "None"}`,
+    ].join("\n")).join("\n\n");
+    gymListings.addRow([gym.name, gym.address, gym.city ?? "", gym.state ?? "", gym.country ?? "", gym.lat ?? "", gym.lng ?? "", gym.phone, gym.contactEmail ?? "", gym.website, gym.gymType ?? "", gym.hours ?? "", gym.amenities.join("\n"), gym.equipment.join("\n"), dayPassText, membershipText, gym.isPublished ? "Yes" : "No", gym.id]);
+  }
+  gymListings.getColumn(18).hidden = true;
+
   summary.getCell("F1").value = "Period";
   summary.eachRow((row, index) => { if (index > 1) row.getCell(6).value = "Selectable"; });
   summary.addRow(["Financial metrics", "", "", "", "", "All time"]);
   financial.eachRow((row, index) => { if (index > 1) summary.addRow([row.getCell(1).value, row.getCell(2).value, "", "", "", "All time"]); });
-  const tabOrder = ["Overview", "Users", "User and demand growth", "Gyms", "Gym claim clicks", "Gym financials", "Financial growth", "Revenue by offer", "Popular cities", "Filter usage"];
+  const tabOrder = ["Overview", "Users", "User and demand growth", "Gyms", "Gym Listings", "Gym claim clicks", "Gym financials", "Financial growth", "Revenue by offer", "Popular cities", "Filter usage"];
   const ordered = new ExcelJS.Workbook();
   ordered.creator = workbook.creator; ordered.created = workbook.created; ordered.modified = workbook.modified;
   for (const name of tabOrder) {
