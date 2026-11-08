@@ -1,8 +1,32 @@
 import { db } from "@/prisma/client";
+import { Prisma } from "@prisma/client";
 import { cleanMembershipOptions, effectiveMonthlyPrice, lowestMembershipOption } from "@/lib/memberships";
 import { cleanDayPassOptions, lowestDayPassOption } from "@/lib/day-passes";
 
 const GYM_TYPES = new Set(["Open", "Personal training gym", "Group training gym", "Specialty gym/studio"]);
+
+type GymLookupClient = {
+    gym: {
+        findFirst(args: { where: Prisma.GymWhereInput; select: { id: true } }): Promise<{ id: string } | null>;
+    };
+};
+
+export async function gymListingUniquenessErrors(
+    listing: { name: string; address: string },
+    excludeGymId?: string,
+    client: GymLookupClient = db,
+) {
+    const exclusion = excludeGymId ? { id: { not: excludeGymId } } : {};
+    const name = listing.name.trim(), address = listing.address.trim();
+    const [nameMatch, addressMatch] = await Promise.all([
+        name ? client.gym.findFirst({ where: { ...exclusion, name: { equals: name, mode: "insensitive" } }, select: { id: true } }) : Promise.resolve(null),
+        address ? client.gym.findFirst({ where: { ...exclusion, address: { equals: address, mode: "insensitive" } }, select: { id: true } }) : Promise.resolve(null),
+    ]);
+    return [
+        ...(nameMatch ? [{ field: "name", message: "That gym name is already in use. Enter a unique gym name." }] : []),
+        ...(addressMatch ? [{ field: "address", message: "That address is already in use by another gym listing." }] : []),
+    ];
+}
 
 export function gymSlug(name: string) {
     const base = name

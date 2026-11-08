@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { hasAdminAccessByEmail } from "@/lib/admin";
-import { cleanGymInput, gymSlug, validateCompleteGymInput } from "@/lib/gyms";
+import { cleanGymInput, gymListingUniquenessErrors, gymSlug, validateCompleteGymInput } from "@/lib/gyms";
 import { db } from "@/prisma/client";
 
 async function authorize() {
@@ -64,6 +64,8 @@ export async function POST(req: Request) {
     const data = cleanGymInput(body);
     const missing = validateCompleteGymInput(body, data);
     if (missing.length) return NextResponse.json({ message: `Complete these required fields: ${missing.join(", ")}.` }, { status: 400 });
+    const uniquenessErrors = await gymListingUniquenessErrors(data);
+    if (uniquenessErrors.length) return NextResponse.json({ message: uniquenessErrors[0].message, errors: uniquenessErrors }, { status: 409 });
     const gym = await db.gym.create({ data: { ...data, slug: gymSlug(data.name), isVerified: false } });
     return NextResponse.json({ gym, isClaimed: false }, { status: 201 });
 }

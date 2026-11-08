@@ -1,7 +1,7 @@
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
-import { cleanGymInput, userCanEditGym, validateCompleteGymInput } from "@/lib/gyms";
+import { cleanGymInput, gymListingUniquenessErrors, userCanEditGym, validateCompleteGymInput } from "@/lib/gyms";
 import { db } from "@/prisma/client";
 import { Prisma } from "@prisma/client";
 
@@ -53,6 +53,8 @@ export async function PATCH(req: Request, { params }: Context) {
     const input = cleanGymInput({ ...body, name: body.name ?? current.name, address: body.address ?? current.address });
     const missing = validateCompleteGymInput({ ...body, name: body.name ?? current.name, address: body.address ?? current.address }, input);
     if (missing.length) return NextResponse.json({ message: `Complete these required fields: ${missing.join(", ")}.` }, { status: 400 });
+    const uniquenessErrors = await gymListingUniquenessErrors(input, id);
+    if (uniquenessErrors.length) return NextResponse.json({ message: uniquenessErrors[0].message, errors: uniquenessErrors }, { status: 409 });
     const { isPublished: _isPublished, ...editable } = input;
 
     const gym = await db.$transaction(async (tx) => {

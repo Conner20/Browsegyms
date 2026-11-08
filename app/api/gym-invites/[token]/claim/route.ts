@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
-import { cleanGymInput, validateCompleteGymInput } from "@/lib/gyms";
+import { cleanGymInput, gymListingUniquenessErrors, validateCompleteGymInput } from "@/lib/gyms";
 import { PENDING_GYM_INVITE_COOKIE } from "@/lib/pending-gym-invite";
 import { db } from "@/prisma/client";
 import { Prisma } from "@prisma/client";
@@ -25,6 +25,8 @@ export async function PATCH(req: Request, { params }: Context) {
     const data = cleanGymInput(body);
     const missing = validateCompleteGymInput(body, data);
     if (missing.length) return NextResponse.json({ message: `Complete these required fields: ${missing.join(", ")}.` }, { status: 400 });
+    const uniquenessErrors = await gymListingUniquenessErrors(data, invite.gymId);
+    if (uniquenessErrors.length) return NextResponse.json({ message: uniquenessErrors[0].message, errors: uniquenessErrors }, { status: 409 });
     const { isPublished: _isPublished, ...editable } = data;
     const claimedAt = new Date();
 
@@ -37,6 +39,8 @@ export async function PATCH(req: Request, { params }: Context) {
             if (user.gymAccesses.some(access => access.gymId !== invite.gymId)) throw new Error("ACCOUNT_ALREADY_HAS_GYM");
             const otherOwner = await tx.gymAccess.findFirst({ where: { gymId: invite.gymId, userId: { not: user.id } }, select: { id: true } });
             if (otherOwner) throw new Error("GYM_ALREADY_CLAIMED");
+            const transactionConflicts = await gymListingUniquenessErrors(data, invite.gymId, tx);
+            if (transactionConflicts.length) throw new Error(`GYM_LISTING_CONFLICTS:${JSON.stringify(transactionConflicts)}`);
 
             await tx.gym.update({ where: { id: invite.gymId }, data: { ...editable, isVerified: true, verifiedAt: claimedAt, verifiedByEmail: accountEmail, verificationRequired: false, verificationSections: [], verificationBaseline: Prisma.JsonNull } });
             await tx.user.update({ where: { id: user.id }, data: { role: "GYM" } });
@@ -54,6 +58,10 @@ export async function PATCH(req: Request, { params }: Context) {
         if (error instanceof Error && error.message === "VERIFIED_ACCOUNT_REQUIRED") return NextResponse.json({ message: "A verified account is required to claim this listing." }, { status: 401 });
         if (error instanceof Error && error.message === "ACCOUNT_ALREADY_HAS_GYM") return NextResponse.json({ message: "This account is already associated with another gym listing." }, { status: 409 });
         if (error instanceof Error && error.message === "GYM_ALREADY_CLAIMED") return NextResponse.json({ message: "This gym listing has already been claimed." }, { status: 409 });
+        if (error instanceof Error && error.message.startsWith("GYM_LISTING_CONFLICTS:")) {
+            const conflicts = JSON.parse(error.message.slice("GYM_LISTING_CONFLICTS:".length)) as { field: string; message: string }[];
+            return NextResponse.json({ message: conflicts[0]?.message ?? "The gym name or address is already in use.", errors: conflicts }, { status: 409 });
+        }
         throw error;
     }
 

@@ -23,7 +23,7 @@ Module._load = function(name, parent, isMain) {
   if (name === 'next/headers') return { cookies: async () => ({ get: () => undefined, delete: () => {} }) };
   if (name === '@/lib/auth') return { authOptions: {} };
   if (name === '@/prisma/client') return { db };
-  if (name === '@/lib/gyms') return { cleanGymInput: () => ({ name: 'Verified gym', isPublished: true }), validateCompleteGymInput: () => [] };
+  if (name === '@/lib/gyms') return { cleanGymInput: () => ({ name: 'Verified gym', address: '1 Main St', isPublished: true }), validateCompleteGymInput: () => [], gymListingUniquenessErrors: async () => [] };
   if (name === '@/lib/listing-verification') return { getListingVerification: async () => expired ? { ...record(), expiresAt: new Date(0) } : record() };
   if (name.startsWith('@/')) name = path.join(__dirname, '..', name.slice(2));
   return original.call(this, name, parent, isMain);

@@ -2,7 +2,7 @@ import { getServerSession } from "next-auth";
 import { NextResponse } from "next/server";
 import { authOptions } from "@/lib/auth";
 import { hasAdminAccessByEmail } from "@/lib/admin";
-import { cleanGymInput, validateCompleteGymInput } from "@/lib/gyms";
+import { cleanGymInput, gymListingUniquenessErrors, validateCompleteGymInput } from "@/lib/gyms";
 import { changedGymSections } from "@/lib/gym-verification";
 import { db } from "@/prisma/client";
 
@@ -31,6 +31,8 @@ export async function PATCH(req: Request, { params }: Context) {
     if (missing.length) return NextResponse.json({ message: `Complete these required fields: ${missing.join(", ")}.` }, { status: 400 });
     const current = await db.gym.findUnique({ where: { id }, include: { _count: { select: { access: true } } } });
     if (!current) return NextResponse.json({ message: "Gym not found." }, { status: 404 });
+    const uniquenessErrors = await gymListingUniquenessErrors(data, id);
+    if (uniquenessErrors.length) return NextResponse.json({ message: uniquenessErrors[0].message, errors: uniquenessErrors }, { status: 409 });
     // Compare the submitted form with the same canonical representation of
     // the stored listing. Comparing cleaned input against raw legacy columns
     // incorrectly marked untouched sections as changed (particularly the

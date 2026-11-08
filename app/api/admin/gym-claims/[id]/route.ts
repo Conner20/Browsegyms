@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { hasAdminAccessByEmail } from "@/lib/admin";
 import { db } from "@/prisma/client";
 import { Prisma } from "@prisma/client";
-import { cleanGymInput, validateCompleteGymInput } from "@/lib/gyms";
+import { cleanGymInput, gymListingUniquenessErrors, validateCompleteGymInput } from "@/lib/gyms";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: Context) {
     const body = await req.json().catch(() => ({}));
     const status = body.status === "APPROVED" ? "APPROVED" : body.status === "REJECTED" ? "REJECTED" : null;
     if (!status) return NextResponse.json({ message: "Status must be APPROVED or REJECTED." }, { status: 400 });
-    const claim = await db.gymClaim.findUnique({ where: { id }, select: { id: true, gymId: true, claimantId: true, status: true, proposedData: true, claimant: { select: { email: true } } } });
+    const claim = await db.gymClaim.findUnique({ where: { id }, select: { id: true, gymId: true, claimantId: true, status: true, proposedData: true, gym: { select: { name: true, address: true } }, claimant: { select: { email: true } } } });
     if (!claim) return NextResponse.json({ message: "Claim not found." }, { status: 404 });
     if (claim.status !== "PENDING") return NextResponse.json({ message: "Claim has already been reviewed." }, { status: 409 });
     if (status === "APPROVED") {
@@ -29,6 +29,9 @@ export async function PATCH(req: Request, { params }: Context) {
             select: { id: true },
         });
         if (conflictingAccess) return NextResponse.json({ message: "Gym users can own only one listing, and each listing can have only one owner." }, { status: 409 });
+        const proposed = claim.proposedData && typeof claim.proposedData === "object" && !Array.isArray(claim.proposedData) ? claim.proposedData as Record<string, unknown> : {};
+        const uniquenessErrors = await gymListingUniquenessErrors({ name: typeof proposed.name === "string" ? proposed.name : claim.gym.name, address: typeof proposed.address === "string" ? proposed.address : claim.gym.address }, claim.gymId);
+        if (uniquenessErrors.length) return NextResponse.json({ message: uniquenessErrors[0].message, errors: uniquenessErrors }, { status: 409 });
     }
     const reviewNote = typeof body.reviewNote === "string" ? body.reviewNote.trim() : null;
     let reviewedGymData: Prisma.GymUpdateInput | null = null;
@@ -36,6 +39,8 @@ export async function PATCH(req: Request, { params }: Context) {
         const cleaned = cleanGymInput(body.gymData as Record<string, unknown>);
         const missing = validateCompleteGymInput(body.gymData as Record<string, unknown>, cleaned);
         if (missing.length) return NextResponse.json({ message: `Complete these required fields: ${missing.join(", ")}.` }, { status: 400 });
+        const uniquenessErrors = await gymListingUniquenessErrors(cleaned, claim.gymId);
+        if (uniquenessErrors.length) return NextResponse.json({ message: uniquenessErrors[0].message, errors: uniquenessErrors }, { status: 409 });
         const { isPublished: _isPublished, ...editable } = cleaned;
         reviewedGymData = editable;
     }
