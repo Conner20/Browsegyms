@@ -646,8 +646,7 @@ export default function GymDiscoveryLanding({
       () =>
         all.filter(
           (g) =>
-            pricingMode === "dayPass" ||
-            (membershipOptionsFor(g).length > 0 && cost(g, pricingMode) > 0),
+            pricingMode === "dayPass" || membershipOptionsFor(g).length > 0,
         ),
       [all, pricingMode],
     ),
@@ -688,9 +687,7 @@ export default function GymDiscoveryLanding({
         }))
         .filter(
           (g) =>
-            (pricingMode !== "membership" ||
-              (membershipOptionsFor(g).length > 0 &&
-                cost(g, pricingMode) > 0)) &&
+            (pricingMode !== "membership" || membershipOptionsFor(g).length > 0) &&
             (!favoritesOnly || favorites.includes(g.id)) &&
             g.distance <= radius &&
             cost(g, pricingMode) <= limit &&
@@ -870,7 +867,7 @@ export default function GymDiscoveryLanding({
     }
     setDayPassPrompt({ gym: g, intent: "dayPass", optionId: selectedOption?.id });
   };
-  const chosen = gyms.find((g) => g.id === selected);
+  const chosen = gyms.find((g) => g.id === selected) ?? all.find((g) => g.id === selected);
   const panels = compare.length
     ? compare
         .map((id) => gyms.find((g) => g.id === id))
@@ -878,13 +875,9 @@ export default function GymDiscoveryLanding({
     : chosen
       ? [chosen]
       : [];
-  const selectedGymIndex = selected
-      ? gyms.findIndex((gym) => gym.id === selected)
-      : -1,
-    mobileCarouselPanels =
-      selectedGymIndex >= 0
-        ? [...gyms.slice(selectedGymIndex), ...gyms.slice(0, selectedGymIndex)]
-        : [];
+  const mobileCarouselPanels = chosen
+    ? [chosen, ...gyms.filter((gym) => gym.id !== chosen.id)]
+    : [];
   const showSwipeTutorial = () => {
     if (window.innerWidth >= 768) return;
     try {
@@ -1265,7 +1258,7 @@ export default function GymDiscoveryLanding({
                 event.stopPropagation();
                 changePricingMode();
               }}
-              className="landing-pricing-switch ml-auto inline-flex rounded-full border border-black/10 bg-white p-1 shadow-sm dark:border-white/15 dark:bg-[#111411]"
+              className={`landing-pricing-switch relative ml-auto inline-flex rounded-full border border-black/10 bg-white p-1 shadow-sm dark:border-white/15 dark:bg-[#111411] ${panels.length ? "z-[1101]" : ""}`}
             >
               <button
                 type="button"
