@@ -30,7 +30,7 @@ async function requireMe() {
 export type NutritionEntryDTO = {
     id: string;
     date: string; // YYYY-MM-DD (UTC)
-    meal: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+    meal: string;
     foodName: string;
     servings: number;
     kcal: number;
@@ -75,10 +75,37 @@ function toISODate(d: Date): string {
     return x.toISOString().slice(0, 10);
 }
 
+const legacyMealMap: Record<string, string> = {
+    breakfast: 'meal_1',
+    lunch: 'meal_2',
+    dinner: 'meal_3',
+    snack: 'meal_4',
+};
+
+const NUMBERED_MEALS_CUTOFF = new Date('2026-11-11T05:00:00.000Z');
+
+function loggedHour(value: string | null | undefined) {
+    const match = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(value?.trim() ?? '');
+    if (!match) return null;
+    const hour = Number(match[1]) % 12 + (match[3].toUpperCase() === 'PM' ? 12 : 0);
+    return Number.isFinite(hour) ? hour : null;
+}
+
+function normalizeMealKey(value: unknown, createdAt?: Date, time?: string | null) {
+    const meal = String(value ?? '').toLowerCase();
+    if (legacyMealMap[meal]) return legacyMealMap[meal];
+    if (meal === 'meal_1' && createdAt && createdAt < NUMBERED_MEALS_CUTOFF) {
+        const hour = loggedHour(time);
+        if (hour !== null) return hour < 11 ? 'meal_1' : hour < 16 ? 'meal_2' : hour < 20 ? 'meal_3' : 'meal_4';
+    }
+    return /^meal_[1-9]\d*$/.test(meal) ? meal : 'meal_1';
+}
+
 /** ---------------- Public API used by the Nutrition page ---------------- */
 type NutritionSettingsDTO = {
     goals: MacroGoalsDTO;
     heatmapLevels: HeatmapLevelsDTO;
+    mealCounts: Record<string, number>;
 };
 
 function clampGoal(value: number, min = 0, max = 10_000) {
@@ -136,6 +163,7 @@ function defaultSettings(): NutritionSettingsDTO {
             c: [...DEFAULT_HEATMAP_LEVELS.c],
             p: [...DEFAULT_HEATMAP_LEVELS.p],
         },
+        mealCounts: {},
     };
 }
 
@@ -171,7 +199,7 @@ export async function fetchAllNutritionData(
     const viewingUser: { id: string; email: string | null } | null = null;
     void viewUserId;
 
-    const [entries, bodyweights, customFoods, settings] = await Promise.all([
+    const [entries, bodyweights, customFoods, settings, daySettings] = await Promise.all([
         db.nutritionEntry.findMany({
             where: { userId: targetUserId },
             orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
@@ -187,6 +215,7 @@ export async function fetchAllNutritionData(
                 f: true,
                 time: true,
                 customFoodId: true,
+                createdAt: true,
             },
         }),
         db.bodyweightEntry.findMany({
@@ -209,8 +238,21 @@ export async function fetchAllNutritionData(
                 heatmapLevels: true,
             },
         }),
+        db.nutritionDaySettings.findMany({
+            where: { userId: targetUserId },
+            select: { date: true, mealCount: true },
+        }),
     ]);
 
+    const mealCounts = daySettings.reduce<Record<string, number>>((counts, setting) => {
+        counts[toISODate(setting.date)] = Math.max(1, setting.mealCount);
+        return counts;
+    }, {});
+    entries.forEach((entry) => {
+        const match = /^meal_(\d+)$/.exec(normalizeMealKey(entry.meal, entry.createdAt, entry.time));
+        const date = toISODate(entry.date);
+        mealCounts[date] = Math.max(mealCounts[date] ?? 1, match ? Number(match[1]) : 1);
+    });
     const settingsDTO = settings
         ? {
             goals: {
@@ -220,8 +262,9 @@ export async function fetchAllNutritionData(
                 c: settings.goalCarb,
             },
             heatmapLevels: decodeHeatmapLevels(settings.heatmapLevels),
+            mealCounts,
         }
-        : defaultSettings();
+        : { ...defaultSettings(), mealCounts };
 
     return {
         requiresAuth: false,
@@ -229,7 +272,7 @@ export async function fetchAllNutritionData(
         entries: entries.map((e: typeof entries[number]) => ({
             id: e.id,
             date: toISODate(e.date),
-            meal: e.meal,
+            meal: normalizeMealKey(e.meal, e.createdAt, e.time),
             foodName: e.foodName,
             servings: e.servings,
             kcal: e.kcal,
@@ -258,7 +301,7 @@ export async function fetchAllNutritionData(
 
 export async function addNutritionEntryServer(input: {
     date: string; // 'YYYY-MM-DD'
-    meal: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+    meal: string;
     foodName: string;
     servings: number;
     kcal: number;
@@ -274,7 +317,7 @@ export async function addNutritionEntryServer(input: {
         data: {
             userId,
             date: toUTCDate(input.date),
-            meal: input.meal,
+            meal: /^meal_[1-9]\d*$/.test(input.meal) ? input.meal : 'meal_1',
             foodName: input.foodName,
             servings: input.servings,
             kcal: input.kcal,
@@ -312,6 +355,18 @@ export async function addNutritionEntryServer(input: {
         time: created.time,
         customFoodId: created.customFoodId ?? null,
     };
+}
+
+export async function saveMealCountServer(dateISO: string, count: number): Promise<number> {
+    const userId = await requireMe();
+    const mealCount = Math.max(1, Math.min(20, Math.floor(Number(count) || 1)));
+    const settings = await db.nutritionDaySettings.upsert({
+        where: { userId_date: { userId, date: toUTCDate(dateISO) } },
+        update: { mealCount },
+        create: { userId, date: toUTCDate(dateISO), mealCount },
+        select: { mealCount: true },
+    });
+    return settings.mealCount;
 }
 
 export async function deleteNutritionEntryServer(id: string): Promise<{ deleted: boolean }> {

@@ -4,7 +4,7 @@ import Link from 'next/link';
 import AdminHeader from '@/components/AdminHeader';
 import { useMemo, useRef, useState, useEffect, useCallback, Suspense } from 'react';
 import type { Dispatch, SetStateAction, CSSProperties } from 'react';
-import { Plus, X, Trash2, ArrowUpRight, ArrowDownRight, Sliders, Calendar, Share2, ChevronDown } from 'lucide-react';
+import { Plus, X, Trash2, ArrowUpRight, ArrowDownRight, Sliders, Calendar, Share2, ChevronDown, ScanBarcode } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import clsx from 'clsx';
@@ -20,6 +20,7 @@ import {
     deleteCustomFoodServer,
     saveMacroGoalsServer,
     saveHeatmapLevelsServer,
+    saveMealCountServer,
     type NutritionEntryDTO,
     type BodyweightDTO,
     type CustomFoodDTO,
@@ -75,7 +76,7 @@ function useIsCoarsePointer() {
 /** ---------- types ---------- */
 type Macro = { kcal: number; p: number; f: number; c: number };
 type Food = { id: string; name: string; macros: Macro; servingGrams: number };
-type Meal = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+type Meal = string;
 type BWPoint = { date: string; weight: number };
 type RangeKey = '1W' | '1M' | '3M' | '1Y' | 'ALL';
 type HMMetric = 'kcal' | 'f' | 'c' | 'p';
@@ -84,6 +85,11 @@ type ShareOutgoingEntry = { viewer: ShareUserInfo; workouts: boolean; wellness: 
 type ShareIncomingEntry = { owner: ShareUserInfo; workouts: boolean; wellness: boolean; nutrition: boolean };
 
 const shareDisplayName = (user: ShareUserInfo) => user.email?.trim() || 'Email unavailable';
+const mealKey = (number: number): Meal => `meal_${number}`;
+const mealLabel = (meal: Meal) => {
+    const match = /^meal_(\d+)$/.exec(meal);
+    return match ? `Meal ${match[1]}` : meal;
+};
 
 /** Demo foods (static baseline options) */
 const FOOD_DB: Food[] = [
@@ -122,6 +128,8 @@ function NutritionContent() {
 
     /** Which date are we editing/seeing meals for? */
     const [dateISO, setDateISO] = useState<string>(fmtDate(new Date()));
+    const [mealCounts, setMealCounts] = useState<Record<string, number>>({});
+    const mealCount = mealCounts[dateISO] ?? 1;
 
     /** Persisted nutrition entries & bodyweights (server) */
     const [entries, setEntries] = useState<NutritionEntryDTO[]>([]);
@@ -142,12 +150,11 @@ function NutritionContent() {
         { meal: Meal; items: { ids: string[]; food: Food; servings: number; time?: string }[] }[]
     >(() => {
         const rows = entries.filter((e) => e.date === dateISO);
-        const base: { meal: Meal; items: { ids: string[]; food: Food; servings: number; time?: string }[] }[] = [
-            { meal: 'breakfast', items: [] },
-            { meal: 'lunch', items: [] },
-            { meal: 'dinner', items: [] },
-            { meal: 'snack', items: [] },
-        ];
+        const requiredMealCount = rows.reduce((maximum, entry) => {
+            const match = /^meal_(\d+)$/.exec(entry.meal);
+            return Math.max(maximum, match ? Number(match[1]) : 1);
+        }, mealCount);
+        const base: { meal: Meal; items: { ids: string[]; food: Food; servings: number; time?: string }[] }[] = Array.from({ length: requiredMealCount }, (_, index) => ({ meal: mealKey(index + 1), items: [] }));
         for (const r of rows) {
             const matchingCustomFood = r.customFoodId
                 ? customFoods.find((cf) => cf.id === r.customFoodId) ?? null
@@ -158,7 +165,7 @@ function NutritionContent() {
                 macros: { kcal: r.kcal, p: r.p, f: r.f, c: r.c },
                 servingGrams: matchingCustomFood?.grams ?? 100,
             };
-            const row = base.find((b) => b.meal === r.meal)!;
+            const row = base.find((b) => b.meal === r.meal) ?? base[0];
             const existingItem = row.items.find((item) => item.food.id === f.id && item.food.name === f.name);
             if (existingItem) {
                 existingItem.servings += r.servings;
@@ -171,12 +178,33 @@ function NutritionContent() {
             }
         }
         return base;
-    }, [customFoods, entries, dateISO]);
+    }, [customFoods, entries, dateISO, mealCount]);
 
     /** Add-food UI state (lives inside the macros card) */
     const [q, setQ] = useState('');
     const [serv, setServ] = useState('');
-    const [targetMeal, setTargetMeal] = useState<Meal>('lunch');
+    const [targetMeal, setTargetMeal] = useState<Meal>('meal_1');
+    useEffect(() => {
+        setTargetMeal(current => {
+            const match = /^meal_(\d+)$/.exec(current);
+            return match && Number(match[1]) <= mealCount ? current : 'meal_1';
+        });
+    }, [dateISO, mealCount]);
+
+    const addMeal = async () => {
+        const previous = mealCount, next = Math.min(20, mealCount + 1);
+        if (next === previous) return;
+        setMealCounts(current => ({ ...current, [dateISO]: next }));
+        setTargetMeal(mealKey(next));
+        try {
+            const saved = await saveMealCountServer(dateISO, next);
+            setMealCounts(current => ({ ...current, [dateISO]: saved }));
+        } catch (error) {
+            console.error(error);
+            setMealCounts(current => ({ ...current, [dateISO]: previous }));
+            setTargetMeal(mealKey(previous));
+        }
+    };
 
     /** Add a food to selected date (persists via server) */
     const addFood = async (food: Food) => {
@@ -324,6 +352,7 @@ function NutritionContent() {
                 setCustomFoods(data.customFoods || []);
                 if (data.settings?.goals) setGoals(data.settings.goals);
                 if (data.settings?.heatmapLevels) setHeatmapLevels(data.settings.heatmapLevels);
+                setMealCounts(data.settings?.mealCounts ?? {});
             } catch (e) {
                 console.error(e);
             }
@@ -522,7 +551,7 @@ function NutritionContent() {
                                 consumed={consumed}
                                 meals={mealsForDate}
                                 onEditGoals={() => setOpenEditGoals(true)}
-                                addUI={{ q, setQ, serv, setServ, targetMeal, setTargetMeal, addFood, customFoods, setCustomFoods }}
+                                addUI={{ q, setQ, serv, setServ, targetMeal, setTargetMeal, addMeal, mealCount, addFood, customFoods, setCustomFoods }}
                             />
                         </div>
                     </section>
@@ -615,7 +644,7 @@ function NutritionContent() {
                                     {mealsForDate.map((row) => (
                                         <div key={row.meal}>
                                             <div className="mb-1 text-xs uppercase tracking-wide text-zinc-500">
-                                                {row.meal}
+                                                {mealLabel(row.meal)}
                                             </div>
                                             <ul className="space-y-1">
                                                 {row.items.length === 0 ? (
@@ -781,6 +810,8 @@ function MacrosFlipCard({
         setServ: (v: string) => void;
         targetMeal: Meal;
         setTargetMeal: (m: Meal) => void;
+        mealCount: number;
+        addMeal: () => void;
         addFood: (food: Food) => void;
         customFoods: CustomFoodDTO[];
         setCustomFoods: Dispatch<SetStateAction<CustomFoodDTO[]>>;
@@ -869,6 +900,7 @@ function MacrosFlipCard({
                             </div>
                         </div>
                         <MacroMealFilter
+                            meals={meals}
                             selectedMeal={selectedMealFilter}
                             setSelectedMeal={setSelectedMealFilter}
                         />
@@ -942,16 +974,18 @@ function RingBig({
 }
 
 function MacroMealFilter({
+    meals,
     selectedMeal,
     setSelectedMeal,
 }: {
+    meals: { meal: Meal }[];
     selectedMeal: Meal | null;
     setSelectedMeal: Dispatch<SetStateAction<Meal | null>>;
 }) {
     return (
         <div className="mt-3">
             <div className="grid grid-cols-5 gap-1 sm:gap-2">
-                {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((meal) => (
+                {meals.map(({ meal }) => (
                     <button
                         key={meal}
                         onClick={() => setSelectedMeal(meal)}
@@ -960,9 +994,9 @@ function MacroMealFilter({
                                 ? 'bg-black text-white dark:bg-white dark:text-black'
                                 : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-white/10'
                         }`}
-                        title={meal}
+                        title={mealLabel(meal)}
                     >
-                        <span className="block whitespace-nowrap">{meal}</span>
+                        <span className="block whitespace-nowrap">{mealLabel(meal)}</span>
                     </button>
                 ))}
                 <button
@@ -986,11 +1020,12 @@ function MacroMealFilter({
 const HIDDEN_PRESETS_KEY = 'nutrition_hidden_presets';
 
 function AddFoodPanel({
-    q, setQ, serv, setServ, targetMeal, setTargetMeal, addFood, customFoods, setCustomFoods,
+    q, setQ, serv, setServ, targetMeal, setTargetMeal, mealCount, addMeal, addFood, customFoods, setCustomFoods,
 }: {
     q: string; setQ: (v: string) => void;
     serv: string; setServ: (v: string) => void;
     targetMeal: Meal; setTargetMeal: (m: Meal) => void;
+    mealCount: number; addMeal: () => void;
     addFood: (food: Food) => void;
     customFoods: CustomFoodDTO[];
     setCustomFoods: Dispatch<SetStateAction<CustomFoodDTO[]>>;
@@ -1009,6 +1044,12 @@ function AddFoodPanel({
     const [presetsLoaded, setPresetsLoaded] = useState(false);
     const [addedFoodId, setAddedFoodId] = useState<string | null>(null);
     const addFeedbackTimeoutRef = useRef<number | null>(null);
+    const scannerControlsRef = useRef<{ stop: () => void } | null>(null);
+    const scannerVideoRef = useRef<HTMLVideoElement | null>(null);
+    const scannedRef = useRef(false);
+    const [scannerOpen, setScannerOpen] = useState(false);
+    const [scanMessage, setScanMessage] = useState<string | null>(null);
+    const [scanLoading, setScanLoading] = useState(false);
 
     const fieldCls = 'h-10 w-full rounded-md border px-3 text-sm outline-none focus:ring-2 focus:ring-black/10 dark:border-white/20 dark:bg-transparent dark:text-gray-100';
     const errorFieldCls = 'border-red-500 bg-red-50 ring-1 ring-red-200 focus:ring-red-200 dark:border-red-400 dark:bg-red-500/10 dark:ring-red-400/30 dark:focus:ring-red-400/20';
@@ -1102,8 +1143,72 @@ function AddFoodPanel({
             if (addFeedbackTimeoutRef.current !== null) {
                 window.clearTimeout(addFeedbackTimeoutRef.current);
             }
+            scannerControlsRef.current?.stop();
         };
     }, []);
+
+    useEffect(() => {
+        if (!scannerOpen) return;
+        let cancelled = false;
+        scannedRef.current = false;
+        setScanMessage('Point the camera at the product barcode.');
+
+        void (async () => {
+            try {
+                const { BrowserMultiFormatReader } = await import('@zxing/browser');
+                if (cancelled || !scannerVideoRef.current) return;
+                const reader = new BrowserMultiFormatReader();
+                const controls = await reader.decodeFromConstraints(
+                    { audio: false, video: { facingMode: { ideal: 'environment' } } },
+                    scannerVideoRef.current,
+                    async (result) => {
+                        if (!result || scannedRef.current) return;
+                        scannedRef.current = true;
+                        scannerControlsRef.current?.stop();
+                        setScanLoading(true);
+                        setScanMessage('Barcode found. Looking up nutrition facts…');
+                        try {
+                            const response = await fetch(`/api/nutrition/barcode/${encodeURIComponent(result.getText())}`, { cache: 'no-store' });
+                            const data = await response.json() as {
+                                error?: string; name?: string; grams?: number | null; kcal?: number | null;
+                                protein?: number | null; carbs?: number | null; fat?: number | null;
+                            };
+                            if (!response.ok) throw new Error(data.error || 'Product lookup failed.');
+                            const display = (value: number | null | undefined) => value === null || value === undefined ? '' : String(Math.round(value * 100) / 100);
+                            setCf(current => ({
+                                name: data.name || current.name,
+                                grams: display(data.grams),
+                                kcal: display(data.kcal),
+                                p: display(data.protein),
+                                c: display(data.carbs),
+                                f: display(data.fat),
+                            }));
+                            setCfErrors({ name: false, grams: false, kcal: false, p: false, c: false, f: false });
+                            setScannerOpen(false);
+                            setScanMessage(null);
+                        } catch (error) {
+                            setScanMessage(error instanceof Error ? error.message : 'Product lookup failed.');
+                            scannedRef.current = false;
+                        } finally {
+                            setScanLoading(false);
+                        }
+                    },
+                );
+                if (cancelled) controls.stop();
+                else scannerControlsRef.current = controls;
+            } catch (error) {
+                setScanMessage(error instanceof Error && error.name === 'NotAllowedError'
+                    ? 'Camera access was denied. Allow camera access and try again.'
+                    : 'Unable to open the camera. Enter the nutrition information manually.');
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+            scannerControlsRef.current?.stop();
+            scannerControlsRef.current = null;
+        };
+    }, [scannerOpen]);
 
     const handleAddFood = async (food: Food) => {
         setAddedFoodId(food.id);
@@ -1132,7 +1237,7 @@ function AddFoodPanel({
                 <select
                     className={`${fieldCls} w-full appearance-none pr-8`}
                     value={targetMeal}
-                    onChange={(e) => setTargetMeal(e.target.value as Meal)}
+                    onChange={(e) => { if(e.target.value==="add_meal")addMeal();else setTargetMeal(e.target.value as Meal); }}
                     style={{
                         backgroundImage:
                             "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>\")",
@@ -1141,9 +1246,10 @@ function AddFoodPanel({
                         backgroundSize: '16px 16px',
                     }}
                 >
-                    {(['breakfast', 'lunch', 'dinner', 'snack'] as const).map((m) => (
-                        <option key={m} value={m}>{m}</option>
+                    {Array.from({length:mealCount},(_,index)=>mealKey(index+1)).map((m) => (
+                        <option key={m} value={m}>{mealLabel(m)}</option>
                     ))}
+                    {mealCount<20&&<option value="add_meal">+ Add meal</option>}
                 </select>
 
                 <input
@@ -1159,7 +1265,7 @@ function AddFoodPanel({
             </div>
 
             {/* Toggle button */}
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2">
                 <button
                     type="button"
                     aria-expanded={showCustom}
@@ -1170,7 +1276,21 @@ function AddFoodPanel({
                     {showCustom ? <X size={16} /> : <Plus size={16} />}
                     {showCustom ? 'Close custom food' : 'Add custom food'}
                 </button>
+                {showCustom && (
+                    <button
+                        type="button"
+                        onClick={() => { setScanMessage(null); setScannerOpen(true); }}
+                        className="hidden h-10 items-center gap-2 rounded-md border px-3 text-sm hover:bg-zinc-50 max-md:inline-flex dark:hover:bg-white/10"
+                    >
+                        <ScanBarcode size={17} />
+                        Scan barcode
+                    </button>
+                )}
             </div>
+
+            {showCustom && scanMessage && !scannerOpen && (
+                <p className="mt-2 text-sm text-zinc-600 md:hidden dark:text-zinc-300">{scanMessage}</p>
+            )}
 
             {/* Collapsible custom food form */}
             <div id="custom-food-panel" className={`mt-2 overflow-hidden rounded-lg border transition-all duration-300 dark:border-white/20 dark:bg-neutral-900/50 ${showCustom ? 'max-h-[420px] opacity-100 p-3' : 'max-h-0 opacity-0 p-0'}`}>
@@ -1186,6 +1306,24 @@ function AddFoodPanel({
                     </div>
                 </div>
             </div>
+
+            {scannerOpen && (
+                <div className="fixed inset-0 z-[100] flex flex-col bg-black md:hidden" role="dialog" aria-modal="true" aria-label="Scan a food barcode">
+                    <div className="flex items-center justify-between gap-3 p-4 text-white">
+                        <div>
+                            <div className="font-semibold">Scan barcode</div>
+                            <div className="text-sm text-zinc-300">{scanLoading ? 'Looking up product…' : scanMessage}</div>
+                        </div>
+                        <button type="button" onClick={() => setScannerOpen(false)} className="rounded-full border border-white/30 p-2" aria-label="Close barcode scanner">
+                            <X size={20} />
+                        </button>
+                    </div>
+                    <div className="relative min-h-0 flex-1 overflow-hidden">
+                        <video ref={scannerVideoRef} className="h-full w-full object-cover" muted playsInline />
+                        <div className="pointer-events-none absolute inset-x-10 top-1/2 h-36 -translate-y-1/2 rounded-xl border-2 border-green-400 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" />
+                    </div>
+                </div>
+            )}
 
             {/* list */}
             <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border dark:border-white/20">

@@ -14,7 +14,6 @@ import {
   Dumbbell,
   ExternalLink,
   LocateFixed,
-  LogIn,
   Mail,
   Map as MapIcon,
   MapPin,
@@ -28,7 +27,6 @@ import {
   SquarePen,
   SlidersHorizontal,
   Star,
-  UserPlus,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -1162,7 +1160,6 @@ export default function GymDiscoveryLanding({
                 className="landing-mobile-auth-button"
                 style={{ background: "transparent" }}
               >
-                <LogIn className="h-4 w-4" />
                 <span className="landing-mobile-auth-label">Log in</span>
               </button>
               <button
@@ -1174,7 +1171,6 @@ export default function GymDiscoveryLanding({
                 className="landing-mobile-auth-button"
                 style={{ background: "#22c55e", color: "#111411" }}
               >
-                <UserPlus className="h-4 w-4" />
                 <span className="landing-mobile-auth-label">Sign up</span>
               </button>
             </nav>

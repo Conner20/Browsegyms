@@ -79,6 +79,7 @@ model User {
   nutritionEntries     NutritionEntry[]
   bodyweightEntries    BodyweightEntry[]
   nutritionSettings    NutritionSettings?
+  nutritionDaySettings NutritionDaySettings[]
 
   @@index([deletedAt])
 }
@@ -232,13 +233,6 @@ model LandingEvent {
   @@index([userId, createdAt])
 }
 
-enum MealType {
-  breakfast
-  lunch
-  dinner
-  snack
-}
-
 model NutritionCustomFood {
   id        String           @id @default(cuid())
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -260,7 +254,7 @@ model NutritionEntry {
   user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId       String
   date         DateTime
-  meal         MealType
+  meal         String               @default("meal_1")
   customFood   NutritionCustomFood? @relation(fields: [customFoodId], references: [id])
   customFoodId String?
   foodName     String
@@ -298,6 +292,19 @@ model NutritionSettings {
   heatmapLevels Json?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+}
+
+model NutritionDaySettings {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  date      DateTime
+  mealCount Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
 }
 
 model VerificationToken {
