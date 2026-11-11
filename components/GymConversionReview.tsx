@@ -57,7 +57,7 @@ export default function GymConversionReview({ initialRows }: { initialRows: Conv
   return <div className="text-white">
     <section className="mx-auto max-w-5xl overflow-hidden rounded-3xl border border-white/10 bg-[#111411] shadow-2xl">
       <header className="border-b border-white/10 p-6 sm:p-8">
-        <p className="max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected day pass or membership.</p>
+        <p className="max-w-2xl text-sm leading-6 text-white/60">Review each referral and confirm whether they purchased the selected pass or membership.</p>
       </header>
 
       {pendingRows.length ? <>

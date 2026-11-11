@@ -97,12 +97,12 @@ const labels: Record<string, string> = {
   favoritesRemoved: "Favorites removed",
   comparisons: "Gyms compared",
   compareViews: "Comparison views",
-  dayPassClicks: "Day-pass clicks",
-  uniqueDayPassClickers: "Unique Claim Day Pass clickers",
-  dayPassClaims: "Confirmed day passes",
-  gymConfirmedDayPasses: "Confirmed day passes by gym",
-  uniqueDayPassClaimers: "Users who got a day pass",
-  dayPassSignups: "Signups after day-pass click",
+  dayPassClicks: "Pass clicks",
+  uniqueDayPassClickers: "Unique Claim Pass clickers",
+  dayPassClaims: "Confirmed passes",
+  gymConfirmedDayPasses: "Confirmed passes by gym",
+  uniqueDayPassClaimers: "Users who got a pass",
+  dayPassSignups: "Signups after pass click",
   membershipClicks: "Membership clicks",
   uniqueMembershipClickers: "Unique Claim Membership clickers",
   membershipClaims: "Confirmed memberships",
@@ -124,8 +124,8 @@ const trendMetrics: { key: TrendMetric; label: string }[] = [
   { key: "users", label: "Users" },
   { key: "uniqueVisitors", label: "Unique visitors" },
   { key: "gymProfilesOpened", label: "Gym profiles opened" },
-  { key: "uniqueDayPassClickers", label: "Unique Claim Day Pass clickers" },
-  { key: "confirmedDayPasses", label: "Confirmed day passes" },
+  { key: "uniqueDayPassClickers", label: "Unique Claim Pass clickers" },
+  { key: "confirmedDayPasses", label: "Confirmed passes" },
   {
     key: "uniqueMembershipClickers",
     label: "Unique Claim Membership clickers",
@@ -388,14 +388,14 @@ const headerDescriptions: Record<string, string> = {
   "Profile opens": "The number of unique users who clicked the gym listing.",
   Favorites: "The number of unique users who favorited the gym.",
   Compared: "The number of unique users who added the gym to a comparison.",
-  "Day-pass clicks / confirms":
-    "Unique users who clicked Claim Day Pass, followed by unique users who confirmed getting a day pass.",
+  "Pass clicks / confirms":
+    "Unique users who clicked Claim Pass, followed by unique users who confirmed getting a pass.",
   "Website visits":
     "The number of unique users who followed the gym website link.",
-  "Day-pass signups":
-    "The number of unique users who created an account after clicking Claim Day Pass.",
-  "Day-pass rate":
-    "Unique Claim Day Pass clickers divided by unique profile openers.",
+  "Pass signups":
+    "The number of unique users who created an account after clicking Claim Pass.",
+  "Pass rate":
+    "Unique Claim Pass clickers divided by unique profile openers.",
   "Membership clicks / confirms":
     "Unique users who clicked Claim Membership, followed by unique users who confirmed getting a membership.",
   "Membership signups":
@@ -471,11 +471,11 @@ function GymDemandFunnel({ gyms, days }: { gyms: GymMetric[]; days: number }) {
           ? gym.favorites
           : sortLabel === "Compared"
             ? gym.compares
-            : sortLabel === "Day-pass clicks / confirms"
+            : sortLabel === "Pass clicks / confirms"
               ? gym.dayPassClicks
               : sortLabel === "Website visits"
                 ? gym.websiteVisits
-                : sortLabel === "Day-pass signups"
+                : sortLabel === "Pass signups"
                   ? gym.signups
                   : sortLabel === "Membership clicks / confirms"
                     ? gym.membershipClicks
@@ -553,12 +553,12 @@ function GymDemandFunnel({ gyms, days }: { gyms: GymMetric[]; days: number }) {
     ? selected.claimUsers
         .map(
           (user) =>
-            `Email: ${user.email}\nClicked Claim Day Pass: Yes\nClick timestamp${user.clickTimestamps.length === 1 ? "" : "s"}: ${user.clickTimestamps.map((timestamp) => new Date(timestamp).toLocaleString()).join("; ")}`,
+            `Email: ${user.email}\nClicked Claim Pass: Yes\nClick timestamp${user.clickTimestamps.length === 1 ? "" : "s"}: ${user.clickTimestamps.map((timestamp) => new Date(timestamp).toLocaleString()).join("; ")}`,
         )
         .join("\n\n")
-    : "No identifiable users clicked Claim Day Pass during this reporting period.";
+    : "No identifiable users clicked Claim Pass during this reporting period.";
   const report = selected
-    ? `Send to: ${selected.reportEmail || "No email available"}\n\n${selected.name} — Browse Gyms demand report\nReporting period: ${periodLabel}\n\nUnique users who opened the listing: ${selected.opens}\nUnique users who favorited the listing: ${selected.favorites}\nUnique users who compared the gym: ${selected.compares}\nUnique users who clicked Claim Day Pass: ${selected.dayPassClicks}\nUnique users who visited the gym website: ${selected.websiteVisits}\nUnique users who confirmed getting a day pass: ${selected.confirmedClaims}\nUsers who signed up after clicking Claim Day Pass: ${selected.signups}\nClaim-click rate: ${selected.opens ? Math.round((selected.dayPassClicks / selected.opens) * 100) : 0}%\n\nThis report measures unique users during the selected reporting period.\n\nUser Claim Day Pass activity\n\n${userActivity}`
+    ? `Send to: ${selected.reportEmail || "No email available"}\n\n${selected.name} — Browse Gyms demand report\nReporting period: ${periodLabel}\n\nUnique users who opened the listing: ${selected.opens}\nUnique users who favorited the listing: ${selected.favorites}\nUnique users who compared the gym: ${selected.compares}\nUnique users who clicked Claim Pass: ${selected.dayPassClicks}\nUnique users who visited the gym website: ${selected.websiteVisits}\nUnique users who confirmed getting a pass: ${selected.confirmedClaims}\nUsers who signed up after clicking Claim Pass: ${selected.signups}\nClaim-click rate: ${selected.opens ? Math.round((selected.dayPassClicks / selected.opens) * 100) : 0}%\n\nThis report measures unique users during the selected reporting period.\n\nUser Claim Pass activity\n\n${userActivity}`
     : "";
   const copy = async () => {
     if (!report) return;
@@ -617,9 +617,9 @@ function GymDemandFunnel({ gyms, days }: { gyms: GymMetric[]; days: number }) {
                 "Favorites",
                 "Compared",
                 "Website visits",
-                "Day-pass clicks / confirms",
-                "Day-pass signups",
-                "Day-pass rate",
+                "Pass clicks / confirms",
+                "Pass signups",
+                "Pass rate",
                 "Membership clicks / confirms",
                 "Membership signups",
                 "Membership rate",
@@ -730,7 +730,7 @@ function GymDemandFunnel({ gyms, days }: { gyms: GymMetric[]; days: number }) {
           <pre className="mt-4 whitespace-pre-wrap rounded-xl border border-black/5 bg-zinc-50 p-4 font-sans text-sm leading-6 dark:border-white/10 dark:bg-black/20">
             {report}
           </pre>
-          <h5 className="mt-6 font-black">Users who clicked Claim Day Pass</h5>
+          <h5 className="mt-6 font-black">Users who clicked Claim Pass</h5>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
               <thead className="text-left text-xs uppercase text-zinc-500">
@@ -765,7 +765,7 @@ function GymDemandFunnel({ gyms, days }: { gyms: GymMetric[]; days: number }) {
                   <tr>
                     <td colSpan={3} className="py-5 text-zinc-500">
                       No identifiable account holders clicked this gym&apos;s
-                      day-pass button.
+                      pass button.
                     </td>
                   </tr>
                 )}
@@ -916,13 +916,13 @@ function ClaimClickLogTable({
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div className="rounded-full border border-[#22c55e]/40 bg-[#22c55e]/10 px-4 py-2 text-sm font-black text-[#16803d] dark:text-[#86efac]">
-            Confirmed day passes: {confirmedDayPasses.toLocaleString()}
+            Confirmed passes: {confirmedDayPasses.toLocaleString()}
           </div>
           <div className="rounded-full border border-[#22c55e]/40 bg-[#22c55e]/10 px-4 py-2 text-sm font-black text-[#16803d] dark:text-[#86efac]">
             Confirmed memberships: {confirmedMemberships.toLocaleString()}
           </div>
           <div className="rounded-full border border-black/10 px-4 py-2 text-sm font-bold dark:border-white/15">
-            Day passes confirmed by gym:{" "}
+            Passes confirmed by gym:{" "}
             {gymConfirmedDayPasses.toLocaleString()}
           </div>
           <div className="rounded-full border border-black/10 px-4 py-2 text-sm font-bold dark:border-white/15">
@@ -1042,7 +1042,7 @@ function ClaimClickLogTable({
                   </span>
                 </div>
                 <p className="text-xs text-white/50">
-                  Users who clicked Claim Day Pass or Claim Membership
+                  Users who clicked Claim Pass or Claim Membership
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-2">

@@ -225,8 +225,8 @@ export async function buildAdminMetricsWorkbook() {
   const configuredOffers: OfferGroup[] = [];
   for (const gym of gyms) {
     const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
-    if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: "", access: [] });
-    for (const option of dayPassOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Day pass", offer: `${option.durationDays}-day pass`, offerId: option.id, price: option.price, records: [] });
+    if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", name: "Pass", description: "", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: "", access: [] });
+    for (const option of dayPassOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Day pass", offer: option.name, offerId: option.id, price: option.price, records: [] });
     const membershipOptions = cleanMembershipOptions(gym.membershipOptions);
     if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push({ ...cleanMembershipOptions([{ id: "legacy-membership", name: "Membership", price: gym.membershipPrice }])[0] });
     for (const option of membershipOptions) configuredOffers.push({ gymId: gym.id, gym: gym.name, type: "Membership", offer: option.name || "Membership", offerId: option.id, price: option.price, records: [] });
@@ -330,14 +330,16 @@ export async function buildAdminMetricsWorkbook() {
   combinedFinancials.getColumn(14).hidden = true;
 
   const money = (value: number) => `$${value.toFixed(2)}`;
-  const gymListings = addTable("Gym Listings", ["Gym name", "Address", "City", "State", "Country", "Latitude", "Longitude", "Phone", "Email", "Website", "Gym type", "Hours", "Amenities", "Equipment", "Day-pass options", "Membership options", "Published", "Gym ID"]);
+  const gymListings = addTable("Gym Listings", ["Gym name", "Address", "City", "State", "Country", "Latitude", "Longitude", "Phone", "Email", "Website", "Gym type", "Hours", "Amenities", "Equipment", "Pass options", "Membership options", "Published", "Gym ID"]);
   for (const gym of gyms) {
     const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
-    if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: gym.dayPassUrl ?? "", access: gym.amenities });
+    if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", name: "Pass", description: "", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: gym.dayPassUrl ?? "", access: gym.amenities });
     const membershipOptions = cleanMembershipOptions(gym.membershipOptions);
     if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push(cleanMembershipOptions([{ name: "Membership", price: gym.membershipPrice, purchaseUrl: gym.website, notes: gym.membershipDetails ?? "" }])[0]);
     const dayPassText = dayPassOptions.map((option, index) => [
-      `Option ${index + 1}: ${option.durationDays}-day pass`,
+      `Option ${index + 1}: ${option.name}`,
+      `Duration: ${option.durationDays} day${option.durationDays === 1 ? "" : "s"}`,
+      `Description: ${option.description || "None"}`,
       `Price: ${money(option.price)}`,
       `Purchase URL: ${option.purchaseUrl || "Not provided"}`,
       `Access: ${option.access.join(", ") || "None listed"}`,

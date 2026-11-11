@@ -42,7 +42,7 @@ export async function getConversionReview(gymId: string) {
       const membership = event.eventType === "MEMBERSHIP_CLICKED";
       const metadata = event.metadata as Record<string, unknown> | null;
       const optionName = typeof metadata?.optionName === "string" ? metadata.optionName.trim() : "";
-      const duration = typeof metadata?.durationDays === "number" ? `${metadata.durationDays}-day pass` : "";
+      const duration = typeof metadata?.durationDays === "number" ? `${metadata.durationDays}-day Pass` : "";
       const price = typeof metadata?.price === "number" ? ` · $${metadata.price.toFixed(2)}${membership ? "/mo" : ""}` : "";
       const gymOutcome = outcomes.get(`gym-confirm:${event.id}`);
       const status: ConversionReviewStatus = gymOutcome?.eventType.endsWith("_GYM_CONFIRMED") ? "purchased" : gymOutcome?.eventType.endsWith("_GYM_DECLINED") ? "not_found" : "check_later";
@@ -51,7 +51,7 @@ export async function getConversionReview(gymId: string) {
         sourceClickId: event.id,
         email: event.user?.email?.toLowerCase() || visitorEmails.get(event.visitorId)!,
         claimType: (membership ? "Membership" : "Day pass") as ConversionReviewRow["claimType"],
-        offer: `${optionName || duration || (membership ? "Membership" : "Day pass")}${price}`,
+        offer: `${optionName || duration || (membership ? "Membership" : "Pass")}${price}`,
         clickedAt: event.createdAt.toISOString(),
         status,
         confirmedAt: gymOutcome?.createdAt.toISOString(),

@@ -115,14 +115,15 @@ export function validateCompleteGymInput(body: Record<string, unknown>, data: Re
         ["hours", "hours"], ["coverPhotoUrl", "cover photo"],
     ].forEach(([key, label]) => requireText(key as keyof typeof data, label));
     if (!data.gymType || !GYM_TYPES.has(data.gymType)) missing.push("gym type");
-    if (!data.dayPassOptions.length) missing.push("at least one day pass option");
+    if (!data.dayPassOptions.length) missing.push("at least one pass option");
     const dayPassDurations = new Set<number>();
     data.dayPassOptions.forEach((option, index) => {
-        const prefix = `day pass option ${index + 1}`;
+        const prefix = `pass option ${index + 1}`;
+        if (!option.name) missing.push(`${prefix} name`);
         if (!Number.isFinite(option.price) || option.price < 0) missing.push(`${prefix} price`);
         if (!Number.isInteger(option.durationDays) || option.durationDays < 1) missing.push(`${prefix} duration`);
         if (!option.access.length) missing.push(`${prefix} access`);
-        if (dayPassDurations.has(option.durationDays)) missing.push("unique day pass durations");
+        if (dayPassDurations.has(option.durationDays)) missing.push("unique pass durations");
         dayPassDurations.add(option.durationDays);
         const destination = option.purchaseUrl || data.dayPassOptions[0]?.purchaseUrl;
         if (!destination || (!/^[a-z][a-z\d+.-]*:\/\//i.test(destination) && !destination.includes("."))) missing.push(index === 0 ? `${prefix} URL` : `${prefix} URL or a valid first-option URL`);
@@ -131,7 +132,7 @@ export function validateCompleteGymInput(body: Record<string, unknown>, data: Re
     data.membershipOptions.forEach((option, index) => {
         const prefix = `membership option ${index + 1}`;
         if (!option.name) missing.push(`${prefix} name`);
-        if (!Number.isFinite(option.price) || option.price <= 0) missing.push(`${prefix} price`);
+        if (!Number.isFinite(option.price) || option.price < 0) missing.push(`${prefix} price`);
         if (!option.billingFrequency) missing.push(`${prefix} billing frequency`);
         if (option.billingFrequency === "custom" && (!Number.isFinite(option.billingInterval) || option.billingInterval < 1)) missing.push(`${prefix} billing interval`);
         if (!Number.isFinite(option.contractLength) || option.contractLength < 1) missing.push(`${prefix} contract length`);

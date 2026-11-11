@@ -92,7 +92,7 @@ function UserOnboardingContent() {
                                     >
                                         <span className="text-lg font-semibold sm:text-xl">{label}</span>
                                         <span className="text-sm leading-5 text-zinc-500">
-                                            Compare gyms, save favorites, and find day passes.
+                                            Compare gyms, save favorites, and find passes.
                                         </span>
                                     </button>
                                 );

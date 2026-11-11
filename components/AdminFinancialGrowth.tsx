@@ -9,7 +9,7 @@ type Metric = "total" | "dayPass" | "membership" | "mrr" | "customers";
 
 const metrics: { key: Metric; label: string }[] = [
   { key: "total", label: "Total attributed revenue" },
-  { key: "dayPass", label: "Day-pass revenue" },
+  { key: "dayPass", label: "Pass revenue" },
   { key: "membership", label: "Membership revenue" },
   { key: "mrr", label: "MRR" },
   { key: "customers", label: "Customers supplied" },

@@ -1,5 +1,7 @@
 export type DayPassOption = {
   id: string;
+  name: string;
+  description: string;
   price: number;
   durationDays: number;
   purchaseUrl: string;
@@ -11,7 +13,7 @@ const createId = () => typeof globalThis.crypto?.randomUUID === "function"
   : `day-pass-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export function emptyDayPassOption(): DayPassOption {
-  return { id: createId(), price: 0, durationDays: 1, purchaseUrl: "", access: [] };
+  return { id: createId(), name: defaultDayPassOptionName(1), description: "", price: 0, durationDays: 1, purchaseUrl: "", access: [] };
 }
 
 export function cleanDayPassOptions(value: unknown): DayPassOption[] {
@@ -22,6 +24,10 @@ export function cleanDayPassOptions(value: unknown): DayPassOption[] {
     const durationDays = Number(raw.durationDays);
     return {
       id: typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : createId(),
+      name: typeof raw.name === "string" && raw.name.trim()
+        ? raw.name.trim()
+        : defaultDayPassOptionName(Number.isInteger(durationDays) && durationDays > 0 ? durationDays : 1),
+      description: typeof raw.description === "string" ? raw.description.trim() : "",
       price: Number.isFinite(price) ? Math.max(0, price) : 0,
       durationDays: Number.isInteger(durationDays) && durationDays > 0 ? durationDays : 1,
       purchaseUrl: typeof raw.purchaseUrl === "string" ? raw.purchaseUrl.trim() : "",
@@ -38,7 +44,17 @@ export function lowestDayPassOption(options: DayPassOption[]) {
 }
 
 export function dayPassDurationLabel(days: number) {
-  if (!Number.isInteger(days) || days < 1) return "Day-pass access";
+  if (!Number.isInteger(days) || days < 1) return "Pass access";
   const words = ["", "Single", "Two", "Three", "Four", "Five", "Six", "Seven"];
   return `${words[days] || days}-day access`;
+}
+
+export function defaultDayPassOptionName(days: number) {
+  if (!Number.isInteger(days) || days < 1) return "Pass";
+  const words = ["", "Single", "Two", "Three", "Four", "Five", "Six", "Seven"];
+  return `${words[days] || days}-day Pass`;
+}
+
+export function dayPassOptionLabel(option: DayPassOption) {
+  return option.name.trim() || dayPassDurationLabel(option.durationDays);
 }

@@ -46,6 +46,7 @@ import {
   DayPassOption,
   cleanDayPassOptions,
   dayPassDurationLabel,
+  dayPassOptionLabel,
   lowestDayPassOption,
 } from "@/lib/day-passes";
 import ProfileMenu from "@/components/ProfileMenu";
@@ -102,7 +103,7 @@ const money = (n: number) =>
     return options.length
       ? options
       : g.dayPassPrice != null
-        ? [{ id: "legacy-day-pass", price: g.dayPassPrice, durationDays: Math.max(1, Number(g.dayPassDetails) || 1), purchaseUrl: g.dayPassUrl?.trim() || g.site?.trim() || "", access: g.amenities }]
+        ? [{ id: "legacy-day-pass", name: dayPassDurationLabel(Math.max(1, Number(g.dayPassDetails) || 1)), description: "", price: g.dayPassPrice, durationDays: Math.max(1, Number(g.dayPassDetails) || 1), purchaseUrl: g.dayPassUrl?.trim() || g.site?.trim() || "", access: g.amenities }]
         : [];
   },
   dayPassChoice = (g: LandingGym) => lowestDayPassOption(dayPassOptionsFor(g)),
@@ -845,7 +846,7 @@ export default function GymDiscoveryLanding({
       clickedAt = new Date().toISOString();
     track("DAY_PASS_CLICKED", {
       gymId: g.id,
-      metadata: { optionId: selectedOption?.id, durationDays: selectedOption?.durationDays, price: selectedOption?.price ?? cost(g, "dayPass"), url: destination, clickedAt },
+      metadata: { optionId: selectedOption?.id, optionName: selectedOption?.name, durationDays: selectedOption?.durationDays, price: selectedOption?.price ?? cost(g, "dayPass"), url: destination, clickedAt },
     });
     writeStoredValue(localStorage, "browsegyms_day_pass_clicked_at", clickedAt);
     if (signedIn) {
@@ -1271,7 +1272,7 @@ export default function GymDiscoveryLanding({
                 onClick={() => setPricingMode("dayPass")}
                 className={`whitespace-nowrap rounded-full px-3 py-1.5 font-bold transition ${pricingMode === "dayPass" ? "bg-[#22c55e] text-black" : "text-zinc-500 dark:text-white/55"}`}
               >
-                Day Pass
+                Pass
               </button>
               <button
                 type="button"
@@ -1584,7 +1585,7 @@ export default function GymDiscoveryLanding({
               Create a free account to claim the{" "}
               {dayPassPrompt.intent === "membership"
                 ? "membership"
-                : "day pass"}
+                : "pass"}
               .
             </p>
             <Link
@@ -1636,7 +1637,7 @@ export default function GymDiscoveryLanding({
               Did you get a{" "}
               {purchaseConfirmation.intent === "membership"
                 ? "membership"
-                : "day pass"}{" "}
+                : "pass"}{" "}
               from {purchaseConfirmation.gymName}?
             </h2>
             <div className="mt-6 grid grid-cols-2 gap-3">
@@ -1797,7 +1798,7 @@ export function Card({
               {cost(g, pricingMode) > 0 && (
                 <span className="text-xs text-zinc-500">
                   {" "}
-                  {pricingMode === "membership" ? "/ month" : "/ day pass"}
+                  {pricingMode === "membership" ? "/ month" : "/ pass"}
                 </span>
               )}
             </p>
@@ -2359,6 +2360,9 @@ export function DetailPanel({
     ),
     [expandedMembershipIds, setExpandedMembershipIds] = useState<Set<string>>(
       () => new Set(),
+    ),
+    [expandedDayPassIds, setExpandedDayPassIds] = useState<Set<string>>(
+      () => new Set(),
     );
   const photos = [g.photo, ...(g.photoUrls ?? [])].filter(
     (value, index, array): value is string =>
@@ -2538,7 +2542,7 @@ export function DetailPanel({
                 {(pricingMode === "dayPass" ? (displayedDayPass?.price ?? cost(g, pricingMode)) : cost(g, pricingMode)) > 0 && (
                   <span className="text-sm text-white/50">
                     {" "}
-                    {pricingMode === "membership" ? "/ month" : "/ day pass"}
+                    {pricingMode === "membership" ? "/ month" : "/ pass"}
                   </span>
                 )}
               </p>
@@ -2603,27 +2607,49 @@ export function DetailPanel({
           </div>
           {pricingMode === "dayPass" && dayPassOptions.length > 0 && (
             <section>
-              <h4 className="font-black">Choose a day pass</h4>
+              <h4 className="font-black">Choose a pass</h4>
               <div className="mt-3 space-y-2">
                 {dayPassOptions.map((option) => {
                   const selected = selectedDayPass?.id === option.id;
                   return (
-                    <button
+                    <article
                       key={option.id}
-                      type="button"
                       onClick={() => setSelectedDayPassId(current => current === option.id ? null : option.id)}
-                      className={`block w-full rounded-lg border px-3 py-3 text-left transition ${selected ? "border-white ring-1 ring-white" : "border-white/[.08] hover:border-white/15"}`}
+                      className={`cursor-pointer overflow-hidden rounded-lg border text-left transition ${selected ? "border-white ring-1 ring-white" : "border-white/[.08] hover:border-white/15"}`}
                     >
-                      <span className="flex items-center gap-3">
+                      <div className="flex items-center gap-3 px-3 py-3">
                         <span aria-hidden="true" className={`grid h-5 w-5 shrink-0 place-items-center rounded-full border ${selected ? "border-[#22c55e] bg-[#22c55e] text-black" : "border-white/30"}`}>
                           {selected && (
                             <Check className="h-3.5 w-3.5" strokeWidth={3} />
                           )}
                         </span>
-                        <span className="min-w-0 flex-1 font-black">{dayPassDurationLabel(option.durationDays)}</span>
+                        <span className="min-w-0 flex-1 font-black">{dayPassOptionLabel(option)}</span>
                         <b className="shrink-0 text-[#22c55e]">{money(option.price)}</b>
-                      </span>
-                    </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setExpandedDayPassIds(current => {
+                              const next = new Set(current);
+                              if (next.has(option.id)) next.delete(option.id); else next.add(option.id);
+                              return next;
+                            });
+                          }}
+                          aria-expanded={expandedDayPassIds.has(option.id)}
+                          aria-label={`${expandedDayPassIds.has(option.id) ? "Collapse" : "Expand"} ${dayPassOptionLabel(option)} details`}
+                          className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-semibold text-white/65 transition hover:text-white"
+                        >
+                          <span>Details</span>
+                          <ChevronDown className={`h-4 w-4 transition ${expandedDayPassIds.has(option.id) ? "rotate-180" : ""}`} />
+                        </button>
+                      </div>
+                      {expandedDayPassIds.has(option.id) && (
+                        <div className="border-t border-white/[.08] px-3 py-2.5 text-xs text-white/70">
+                          {option.description && <div className="mt-2"><p className="text-white/45">Description</p><p className="mt-1 whitespace-pre-line text-white/80">{option.description}</p></div>}
+                          <div className="mt-2"><p className="text-white/45">Included access</p><p className="mt-1 text-white">{option.access.filter(item => !/^other$/i.test(item)).join(", ")}</p></div>
+                        </div>
+                      )}
+                    </article>
                   );
                 })}
               </div>
@@ -2888,7 +2914,7 @@ export function DetailPanel({
           >
             {pricingMode === "membership"
               ? "Claim Membership"
-              : "Claim Day Pass"}
+              : "Claim Pass"}
           </button>
         </div>
       )}
@@ -3047,7 +3073,7 @@ function Filters({
           />
         </label>
         <label className="block font-black">
-          {pricingMode === "membership" ? "Membership price" : "Day-pass price"}{" "}
+          {pricingMode === "membership" ? "Membership price" : "Pass price"}{" "}
           · {money(limit)}
           <input
             className="mt-3 w-full accent-[#22c55e]"

@@ -33,8 +33,8 @@ export async function POST(request: Request) {
       if (eventType === "DAY_PASS_CLICKED" && optionId) {
         const gym = await db.gym.findUnique({ where: { id: gymId }, select: { dayPassOptions: true } });
         const option = cleanDayPassOptions(gym?.dayPassOptions).find(item => item.id === optionId);
-        if (!option) return NextResponse.json({ error: "Day-pass option not found" }, { status: 400 });
-        metadata = { ...metadata, durationDays: option.durationDays, price: option.price };
+        if (!option) return NextResponse.json({ error: "Pass option not found" }, { status: 400 });
+        metadata = { ...metadata, optionName: option.name, durationDays: option.durationDays, price: option.price };
       }
       const optionFallback = eventType === "MEMBERSHIP_CLICKED"
         ? typeof metadata?.optionName === "string" && metadata.optionName ? metadata.optionName : metadata?.url

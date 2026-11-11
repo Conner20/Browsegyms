@@ -51,7 +51,7 @@ export async function PATCH(req: Request) {
         metadata: {
           claimClickId: click.id, confirmedBy: "gym owner", confirmedAt: new Date().toISOString(), customerEmail: row.email,
           offerId: typeof clickMetadata?.optionId === "string" ? clickMetadata.optionId : null,
-          offerName: typeof clickMetadata?.optionName === "string" ? clickMetadata.optionName : typeof clickMetadata?.durationDays === "number" ? `${clickMetadata.durationDays}-day pass` : membership ? "Membership" : "Day pass",
+          offerName: typeof clickMetadata?.optionName === "string" ? clickMetadata.optionName : typeof clickMetadata?.durationDays === "number" ? `${clickMetadata.durationDays}-day Pass` : membership ? "Membership" : "Pass",
           ...(membershipPurchaseDate ? { membershipPurchaseDate } : {}),
           attributedAmount: decision.status === "purchased" ? membership ? membershipCharge?.total ?? 0 : clickPrice : 0,
           ...(membershipCharge ? { membershipCharge: JSON.parse(JSON.stringify(membershipCharge)) } : {}),
