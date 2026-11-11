@@ -10,7 +10,7 @@ import FacilityLookup from "@/components/FacilityLookup";
 import UniversalCheckbox from "@/components/UniversalCheckbox";
 import { MembershipOption, cleanMembershipOptions, emptyMembershipOption } from "@/lib/memberships";
 import { DayPassOption, cleanDayPassOptions, emptyDayPassOption } from "@/lib/day-passes";
-import { AMENITY_OPTIONS, EQUIPMENT_OPTIONS } from "@/lib/facility-options";
+import { AMENITY_OPTIONS, EQUIPMENT_OPTIONS, normalizeEquipmentOption } from "@/lib/facility-options";
 
 type FormState = {
     name: string; address: string; city: string; state: string; country: string; lat: number | null; lng: number | null; phone: string; contactEmail: string;
@@ -80,7 +80,7 @@ export default function AdminGymListingEditor({ gymId, inviteToken, initialGym, 
         if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push({ ...emptyMembershipOption(), name: "Membership", price: Number(gym.membershipPrice), access: [], purchaseUrl: gym.website ?? "", notes: gym.membershipDetails ?? "" });
         if (!membershipOptions.length) membershipOptions.push(emptyMembershipOption());
         setForm({
-            name: gym.name ?? "", address: gym.address ?? "", city: gym.city ?? "", state: gym.state ?? "", country: gym.country ?? "", lat: gym.lat ?? null, lng: gym.lng ?? null, phone: formatPhone(gym.phone ?? ""), contactEmail: accountEmail ?? gym.contactEmail ?? "", website: gym.website ?? "", gymType: gym.gymType === "Open gym" ? "Open" : gym.gymType ?? "", dayPassOptions, membershipOptions, hours: gym.hours ?? "", amenities: (gym.amenities ?? []).join("\n"), equipment: (gym.equipment ?? []).join("\n"), coverPhotoUrl: gym.coverPhotoUrl ?? "", photoUrls: gym.photoUrls ?? [], isPublished: gym.isPublished ?? true,
+            name: gym.name ?? "", address: gym.address ?? "", city: gym.city ?? "", state: gym.state ?? "", country: gym.country ?? "", lat: gym.lat ?? null, lng: gym.lng ?? null, phone: formatPhone(gym.phone ?? ""), contactEmail: accountEmail ?? gym.contactEmail ?? "", website: gym.website ?? "", gymType: gym.gymType === "Open gym" ? "Open" : gym.gymType ?? "", dayPassOptions, membershipOptions, hours: gym.hours ?? "", amenities: (gym.amenities ?? []).join("\n"), equipment: (gym.equipment ?? []).map(normalizeEquipmentOption).join("\n"), coverPhotoUrl: gym.coverPhotoUrl ?? "", photoUrls: gym.photoUrls ?? [], isPublished: gym.isPublished ?? true,
         });
         setVerificationRequired(Boolean(gym.verificationRequired));
         setVerificationSections(Array.isArray(gym.verificationSections) ? gym.verificationSections : []);
