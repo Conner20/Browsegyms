@@ -21,7 +21,7 @@ type FormState = {
 
 const empty: FormState = { name: "", address: "", city: "", state: "", country: "", lat: null, lng: null, phone: "", contactEmail: "", website: "", gymType: "", dayPassOptions: [emptyDayPassOption()], membershipOptions: [emptyMembershipOption()], hours: "", amenities: "", equipment: "", coverPhotoUrl: "", photoUrls: [], isPublished: true };
 type AddressSuggestion = { id: string; label: string; lat: number; lng: number; city?: string; state?: string; country?: string };
-const lines = (value: string) => value.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+const lines = (value: string) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 const listingLines = (value: string) => lines(value).filter((item) => !/^other$/i.test(item));
 const GYM_TYPE_OPTIONS = ["Open", "Personal training gym", "Group training gym", "Specialty gym/studio"];
 const formatPhone = (value: string) => {

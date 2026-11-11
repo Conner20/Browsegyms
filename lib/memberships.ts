@@ -97,7 +97,7 @@ export function cleanMembershipOptions(value: unknown): MembershipOption[] {
       guestPassFrequency: (["day", "week", "month", "year"].includes(guestPassFrequency) ? guestPassFrequency : "month") as GuestPassFrequency,
       access: Array.isArray(raw.access)
         ? raw.access.filter((item): item is string => typeof item === "string").map(item => item.trim()).filter(Boolean)
-        : text(raw.access).split(/[\n,]/).map(item => item.trim()).filter(Boolean),
+        : text(raw.access).split(/\r?\n/).map(item => item.trim()).filter(Boolean),
       purchaseUrl: text(raw.purchaseUrl),
       notes: text(raw.notes),
     };
