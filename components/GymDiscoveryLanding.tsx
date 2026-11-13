@@ -267,6 +267,7 @@ export default function GymDiscoveryLanding({
     [amenityFilters, setAmenityFilters] = useState<string[]>([]),
     [sort, setSort] = useState<"distance" | "price">("distance"),
     [pricingMode, setPricingMode] = useState<PricingMode>("dayPass"),
+    [pricingModeTransitioning, setPricingModeTransitioning] = useState(false),
     [favorites, setFavorites] = useState<string[]>([]),
     [favoritesOnly, setFavoritesOnly] = useState(false),
     [visibleGymCount, setVisibleGymCount] = useState(9),
@@ -646,7 +647,9 @@ export default function GymDiscoveryLanding({
       () =>
         all.filter(
           (g) =>
-            pricingMode === "dayPass" || membershipOptionsFor(g).length > 0,
+            pricingMode === "dayPass"
+              ? dayPassOptionsFor(g).length > 0
+              : membershipOptionsFor(g).length > 0,
         ),
       [all, pricingMode],
     ),
@@ -673,6 +676,11 @@ export default function GymDiscoveryLanding({
     if (all.length) setLimit(maxPrice);
   }, [all.length, maxPrice, pricingMode]);
   useEffect(() => {
+    if (!pricingModeTransitioning) return;
+    const frame = window.requestAnimationFrame(() => setPricingModeTransitioning(false));
+    return () => window.cancelAnimationFrame(frame);
+  }, [maxPrice, pricingMode, pricingModeTransitioning]);
+  useEffect(() => {
     if (all.length) setRadius(maxDistance);
   }, [all.length, maxDistance]);
   const gyms = useMemo(
@@ -687,7 +695,9 @@ export default function GymDiscoveryLanding({
         }))
         .filter(
           (g) =>
-            (pricingMode !== "membership" || membershipOptionsFor(g).length > 0) &&
+            (pricingMode === "dayPass"
+              ? dayPassOptionsFor(g).length > 0
+              : membershipOptionsFor(g).length > 0) &&
             (!favoritesOnly || favorites.includes(g.id)) &&
             g.distance <= radius &&
             cost(g, pricingMode) <= limit &&
@@ -878,6 +888,9 @@ export default function GymDiscoveryLanding({
   const mobileCarouselPanels = chosen
     ? [chosen, ...gyms.filter((gym) => gym.id !== chosen.id)]
     : [];
+  const pricingToggleDisabled = Boolean(
+    chosen && dayPassOptionsFor(chosen).length === 0,
+  );
   const showSwipeTutorial = () => {
     if (window.innerWidth >= 768) return;
     try {
@@ -897,27 +910,9 @@ export default function GymDiscoveryLanding({
     setShowSwipeHint(false);
   };
   const changePricingMode = () => {
-    const next: PricingMode =
-        pricingMode === "dayPass" ? "membership" : "dayPass",
-      eligible = all.filter(
-        (g) =>
-          next === "dayPass" ||
-          (membershipOptionsFor(g).length > 0 && cost(g, next) > 0),
-      );
-    setPricingMode(next);
-    setLimit(Math.ceil(Math.max(0, ...eligible.map((g) => cost(g, next)))));
-    setRadius(
-      Number(
-        Math.max(
-          0,
-          ...eligible.map((g) =>
-            g.lat != null && g.lng != null
-              ? miles(origin, { lat: g.lat, lng: g.lng })
-              : (g.distance ?? 0),
-          ),
-        ).toFixed(1),
-      ),
-    );
+    if (pricingToggleDisabled) return;
+    setPricingModeTransitioning(true);
+    setPricingMode((current) => current === "dayPass" ? "membership" : "dayPass");
   };
   return (
     <main
@@ -1133,7 +1128,7 @@ export default function GymDiscoveryLanding({
               setFilterOpen(true);
               track("FILTER_OPENED");
             }}
-            className={`filter-pill landing-toolbar-button landing-action-filters ${filters.length > 0 || radius < maxDistance || limit < maxPrice ? "!border-[#22c55e] !bg-[#22c55e] !text-black" : ""}`}
+            className={`filter-pill landing-toolbar-button landing-action-filters ${filters.length > 0 || equipmentFilters.length > 0 || amenityFilters.length > 0 || (!pricingModeTransitioning && (radius < maxDistance || limit < maxPrice)) ? "!border-[#22c55e] !bg-[#22c55e] !text-black" : ""}`}
           >
             <SlidersHorizontal />
             <span className="landing-action-label landing-filters-label">
@@ -1258,10 +1253,13 @@ export default function GymDiscoveryLanding({
                 event.stopPropagation();
                 changePricingMode();
               }}
-              className={`landing-pricing-switch relative ml-auto inline-flex rounded-full border border-black/10 bg-white p-1 shadow-sm dark:border-white/15 dark:bg-[#111411] ${panels.length ? "z-[1101]" : ""}`}
+              aria-disabled={pricingToggleDisabled}
+              title={pricingToggleDisabled ? "This gym does not offer a pass" : undefined}
+              className={`landing-pricing-switch relative ml-auto inline-flex rounded-full border border-black/10 bg-white p-1 shadow-sm dark:border-white/15 dark:bg-[#111411] ${panels.length ? "z-[1101]" : ""} ${pricingToggleDisabled ? "cursor-not-allowed opacity-50" : ""}`}
             >
               <button
                 type="button"
+                disabled={pricingToggleDisabled}
                 onClick={() => setPricingMode("dayPass")}
                 className={`whitespace-nowrap rounded-full px-3 py-1.5 font-bold transition ${pricingMode === "dayPass" ? "bg-[#22c55e] text-black" : "text-zinc-500 dark:text-white/55"}`}
               >
@@ -1269,6 +1267,7 @@ export default function GymDiscoveryLanding({
               </button>
               <button
                 type="button"
+                disabled={pricingToggleDisabled}
                 onClick={() => setPricingMode("membership")}
                 className={`whitespace-nowrap rounded-full px-3 py-1.5 font-bold transition ${pricingMode === "membership" ? "bg-[#22c55e] text-black" : "text-zinc-500 dark:text-white/55"}`}
               >

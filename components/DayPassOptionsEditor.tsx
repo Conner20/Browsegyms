@@ -42,7 +42,7 @@ export default function DayPassOptionsEditor({ options, availableAmenities, onCh
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {options.length > 1 ? <button type="button" data-confirming={pendingDeleteId === option.id} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); requestDelete(option.id, index); }} className="listing-option-delete-button grid h-[34px] w-[34px] place-items-center rounded-full border border-red-300 text-red-500 transition hover:border-red-400 hover:bg-red-50 dark:border-red-400/40 dark:hover:bg-red-500/10" aria-label={pendingDeleteId === option.id ? `Confirm removal of ${optionName}` : `Remove ${optionName}`}><Trash2 size={16}/></button> : <span aria-hidden="true" className="invisible grid h-[34px] w-[34px] place-items-center"><Trash2 size={16}/></span>}
+          <button type="button" data-confirming={pendingDeleteId === option.id} onKeyDown={event => event.stopPropagation()} onClick={event => { event.stopPropagation(); requestDelete(option.id, index); }} className="listing-option-delete-button grid h-[34px] w-[34px] place-items-center rounded-full border border-red-300 text-red-500 transition hover:border-red-400 hover:bg-red-50 dark:border-red-400/40 dark:hover:bg-red-500/10" aria-label={pendingDeleteId === option.id ? `Confirm removal of ${optionName}` : `Remove ${optionName}`}><Trash2 size={16}/></button>
           <ChevronDown aria-hidden="true" className={`h-5 w-5 shrink-0 text-zinc-500 transition dark:text-zinc-400 group-hover:text-white ${editing ? "rotate-180" : ""}`}/>
         </div>
       </div>

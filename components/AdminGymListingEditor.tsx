@@ -19,7 +19,7 @@ type FormState = {
     isPublished: boolean;
 };
 
-const empty: FormState = { name: "", address: "", city: "", state: "", country: "", lat: null, lng: null, phone: "", contactEmail: "", website: "", gymType: "", dayPassOptions: [emptyDayPassOption()], membershipOptions: [emptyMembershipOption()], hours: "", amenities: "", equipment: "", coverPhotoUrl: "", photoUrls: [], isPublished: true };
+const empty: FormState = { name: "", address: "", city: "", state: "", country: "", lat: null, lng: null, phone: "", contactEmail: "", website: "", gymType: "", dayPassOptions: [], membershipOptions: [emptyMembershipOption()], hours: "", amenities: "", equipment: "", coverPhotoUrl: "", photoUrls: [], isPublished: true };
 type AddressSuggestion = { id: string; label: string; lat: number; lng: number; city?: string; state?: string; country?: string };
 const lines = (value: string) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
 const listingLines = (value: string) => lines(value).filter((item) => !/^other$/i.test(item));
@@ -75,7 +75,6 @@ export default function AdminGymListingEditor({ gymId, inviteToken, initialGym, 
     function populate(gym: Record<string, any>) {
         const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
         if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ ...emptyDayPassOption(), price: Number(gym.dayPassPrice), durationDays: Number(normalizeDayPassDays(gym.dayPassDetails)) || 1, purchaseUrl: gym.dayPassUrl ?? gym.website ?? "", access: gym.amenities ?? [] });
-        if (!dayPassOptions.length) dayPassOptions.push(emptyDayPassOption());
         const membershipOptions = cleanMembershipOptions(gym.membershipOptions);
         if (!membershipOptions.length && gym.membershipPrice != null) membershipOptions.push({ ...emptyMembershipOption(), name: "Membership", price: Number(gym.membershipPrice), access: [], purchaseUrl: gym.website ?? "", notes: gym.membershipDetails ?? "" });
         if (!membershipOptions.length) membershipOptions.push(emptyMembershipOption());
@@ -156,7 +155,6 @@ export default function AdminGymListingEditor({ gymId, inviteToken, initialGym, 
         if(form.address.trim()&&(form.lat==null||form.lng==null||!form.city.trim()||!form.state.trim()||!form.country.trim()))errors.push("Address must be selected from the address suggestions.");
         if(!form.coverPhotoUrl)errors.push("Cover photo is required.");
         if(!form.photoUrls.length)errors.push("At least one amenity photo is required.");
-        if(!form.dayPassOptions.length)errors.push("At least one pass option is required.");
         const dayPassDurations=new Set<number>();
         form.dayPassOptions.forEach((option,index)=>{const label=`Pass option ${index+1}`;if(!option.name.trim())errors.push(`${label} name is required.`);if(!Number.isFinite(option.price)||option.price<0)errors.push(`${label} price is required.`);if(!Number.isInteger(option.durationDays)||option.durationDays<1)errors.push(`${label} duration must be a whole number of days.`);if(dayPassDurations.has(option.durationDays))errors.push("Each pass duration must be unique.");dayPassDurations.add(option.durationDays);if(!option.access.some(item=>selectedAmenities.includes(item)))errors.push(`${label} access is required.`);const destination=option.purchaseUrl.trim()||form.dayPassOptions[0]?.purchaseUrl.trim();if(!destination||(!/^[a-z][a-z\d+.-]*:\/\//i.test(destination)&&!destination.includes(".")))errors.push(index===0?`${label} URL must be valid.`:`${label} needs a valid URL or a valid first-option URL.`)});
         if(!form.membershipOptions.length)errors.push("At least one membership option is required.");

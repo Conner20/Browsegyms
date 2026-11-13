@@ -115,7 +115,6 @@ export function validateCompleteGymInput(body: Record<string, unknown>, data: Re
         ["hours", "hours"], ["coverPhotoUrl", "cover photo"],
     ].forEach(([key, label]) => requireText(key as keyof typeof data, label));
     if (!data.gymType || !GYM_TYPES.has(data.gymType)) missing.push("gym type");
-    if (!data.dayPassOptions.length) missing.push("at least one pass option");
     const dayPassDurations = new Set<number>();
     data.dayPassOptions.forEach((option, index) => {
         const prefix = `pass option ${index + 1}`;
