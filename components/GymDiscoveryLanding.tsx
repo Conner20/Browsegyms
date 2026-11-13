@@ -138,26 +138,6 @@ const miles = (
         Math.sin(d(b.lng - a.lng) / 2) ** 2;
   return r * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 };
-const dayPassAccess = (value?: string | null) => {
-  const raw = value?.trim().toLowerCase() ?? "",
-    numeric = Number(raw),
-    words: Record<string, number> = {
-      single: 1,
-      one: 1,
-      two: 2,
-      three: 3,
-      four: 4,
-      five: 5,
-      six: 6,
-      seven: 7,
-    };
-  const days =
-    Number.isInteger(numeric) && numeric > 0
-      ? numeric
-      : (Object.entries(words).find(([word]) => raw.includes(word))?.[1] ?? 1);
-  const labels = ["", "Single", "Two", "Three", "Four", "Five", "Six", "Seven"];
-  return `${labels[days] || days}-day access`;
-};
 const gymHoursForDisplay = (value: string) =>
   value.replace(
     /\b([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*(?:AM|PM))/gi,
@@ -2372,7 +2352,8 @@ export function DetailPanel({
     membershipOptions = membershipOptionsFor(g),
     selectedMembership =
       membershipOptions.find((option) => option.id === selectedMembershipId) ??
-      null;
+      null,
+    displayedMembership = selectedMembership ?? membershipChoice(g);
   const membershipDestination =
     selectedMembership?.purchaseUrl?.trim() ||
     membershipOptions[0]?.purchaseUrl?.trim() ||
@@ -2515,38 +2496,41 @@ export function DetailPanel({
         </div>
         <div className="space-y-5 p-5">
           <div>
-            <div className="flex items-center justify-between gap-3">
+            <div>
               <div className="flex min-w-0 items-center gap-2">
                 <h3 className="text-2xl font-black">{g.name}</h3>
                 {g.isVerified && <VerifiedBadge />}
               </div>
-              <p className="shrink-0 text-right text-sm font-semibold leading-none text-white/50">
+              <p className="mt-1 text-sm font-semibold text-white/50">
                 {g.type}
               </p>
             </div>
             <div className="mt-1 flex items-baseline justify-between gap-3">
               <p>
                 <b className="text-xl">
-                  {pricingMode === "dayPass" && displayedDayPass
-                    ? displayedDayPass.price > 0
-                      ? money(displayedDayPass.price)
-                      : "Free"
-                    : costText(g, pricingMode)}
+                  {pricingMode === "dayPass"
+                    ? displayedDayPass
+                      ? displayedDayPass.price > 0
+                        ? money(displayedDayPass.price)
+                        : "Free"
+                      : costText(g, pricingMode)
+                    : displayedMembership
+                      ? effectiveMonthlyPrice(displayedMembership) > 0
+                        ? money(effectiveMonthlyPrice(displayedMembership))
+                        : "Free"
+                      : costText(g, pricingMode)}
                 </b>
-                {(pricingMode === "dayPass" ? (displayedDayPass?.price ?? cost(g, pricingMode)) : cost(g, pricingMode)) > 0 && (
+                {(pricingMode === "dayPass"
+                  ? (displayedDayPass?.price ?? cost(g, pricingMode))
+                  : displayedMembership
+                    ? effectiveMonthlyPrice(displayedMembership)
+                    : cost(g, pricingMode)) > 0 && (
                   <span className="text-sm text-white/50">
                     {" "}
                     {pricingMode === "membership" ? "/ month" : "/ pass"}
                   </span>
                 )}
               </p>
-              <span className="shrink-0 text-right text-sm font-semibold text-white/50">
-                {pricingMode === "membership"
-                  ? "Monthly membership"
-                  : displayedDayPass
-                    ? dayPassDurationLabel(displayedDayPass.durationDays)
-                    : dayPassAccess(g.dayPassDetails)}
-              </span>
             </div>
           </div>
           <div className="space-y-3 text-sm">
@@ -2617,7 +2601,7 @@ export function DetailPanel({
                             <Check className="h-3.5 w-3.5" strokeWidth={3} />
                           )}
                         </span>
-                        <span className="min-w-0 flex-1 font-black">{dayPassOptionLabel(option)}</span>
+                        <span className="min-w-0 flex-1 truncate font-black" title={dayPassOptionLabel(option)}>{dayPassOptionLabel(option)}</span>
                         <b className="shrink-0 text-[#22c55e]">{money(option.price)}</b>
                         <button
                           type="button"
@@ -2639,6 +2623,7 @@ export function DetailPanel({
                       </div>
                       {expandedDayPassIds.has(option.id) && (
                         <div className="border-t border-white/[.08] px-3 py-2.5 text-xs text-white/70">
+                          <p className="break-words font-black text-white">{dayPassOptionLabel(option)}</p>
                           {option.description && <div className="mt-2"><p className="text-white/45">Description</p><p className="mt-1 whitespace-pre-line text-white/80">{option.description}</p></div>}
                           <div className="mt-2"><p className="text-white/45">Included access</p><p className="mt-1 text-white">{option.access.filter(item => !/^other$/i.test(item)).join(", ")}</p></div>
                         </div>
@@ -2691,7 +2676,7 @@ export function DetailPanel({
                               <Check className="h-3.5 w-3.5" strokeWidth={3} />
                             )}
                           </span>
-                          <h5 className="min-w-0 flex-1 truncate font-black text-white">
+                          <h5 className="min-w-0 flex-1 truncate font-black text-white" title={option.name}>
                             {option.name}
                           </h5>
                           <div className="shrink-0 text-right">
@@ -2725,6 +2710,7 @@ export function DetailPanel({
                         </div>
                         {open && (
                           <div className="border-t border-white/[.08] px-3 py-2.5 text-sm text-white/70">
+                            <p className="mb-2 break-words text-xs font-black text-white">{option.name}</p>
                             <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                               <div>
                                 <dt className="text-white/45">
