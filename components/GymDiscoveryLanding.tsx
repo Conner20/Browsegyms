@@ -118,7 +118,9 @@ const money = (n: number) =>
         : (g.membershipPrice ?? 0)
       : (dayPassChoice(g)?.price ?? g.dayPassPrice ?? 0),
   costText = (g: LandingGym, mode: PricingMode = "dayPass") =>
-    cost(g, mode)
+    mode === "membership" && membershipChoice(g)
+      ? cost(g, mode) > 0 ? money(cost(g, mode)) : "Free"
+      : cost(g, mode)
       ? money(cost(g, mode))
       : mode === "membership"
         ? "Not listed"
