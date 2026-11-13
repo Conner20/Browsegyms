@@ -1837,6 +1837,8 @@ function GymMap({
           zoomAnimationThreshold: 8,
           wheelDebounceTime: 30,
         });
+        const userLocationPane = map.current.createPane("userLocationPane");
+        userLocationPane.style.zIndex = "700";
         L.tileLayer(
           `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=${encodeURIComponent(process.env.NEXT_PUBLIC_CARTO_BASEMAP_KEY ?? "")}`,
           {
@@ -2106,6 +2108,7 @@ function GymMap({
     import("leaflet").then(({ default: L }) => {
       userMarker.current?.remove();
       userMarker.current = L.circleMarker([userCoords.lat, userCoords.lng], {
+        pane: "userLocationPane",
         radius: 9,
         color: "#ffffff",
         weight: 3,
