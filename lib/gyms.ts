@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { cleanMembershipOptions, effectiveMonthlyPrice, lowestMembershipOption } from "@/lib/memberships";
 import { cleanDayPassOptions, lowestDayPassOption } from "@/lib/day-passes";
 
-const GYM_TYPES = new Set(["Open", "Personal training gym", "Group training gym", "Specialty gym/studio"]);
+const GYM_TYPES = new Set(["Traditional gym", "Personal training gym", "Group training gym", "Specialty gym/studio"]);
 
 type GymLookupClient = {
     gym: {
@@ -76,7 +76,7 @@ export function cleanGymInput(body: Record<string, unknown>) {
         address: text("address"),
         phone: text("phone"),
         website: text("website").replace(/^https?:\/\//i, "").replace(/\/$/, ""),
-        gymType: gymType === "Open gym" ? "Open" : gymType,
+        gymType: gymType === "Open" || gymType === "Open gym" ? "Traditional gym" : gymType,
         city: optionalText("city"),
         state: optionalText("state"),
         country: optionalText("country"),

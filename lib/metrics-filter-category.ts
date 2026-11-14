@@ -1,4 +1,4 @@
-const gymTypes = new Set(["Open", "Personal training gym", "Group training gym", "Specialty gym/studio"]);
+const gymTypes = new Set(["Traditional gym", "Personal training gym", "Group training gym", "Specialty gym/studio"]);
 const equipmentFilters = new Set(["Squat rack", "Power rack", "Smith machine", "Bench press", "Deadlift platform", "Olympic lifting platform", "Hack squat", "Pendulum squat", "Belt squat", "Leg press", "Cable station", "Pec deck", "Hip thrust machine", "Dumbbells 120+ lb"]);
 const amenityFilters = new Set(["Sauna", "Steam room", "Pool", "Showers", "Locker rooms", "Basketball court", "Turf area", "Group classes", "Personal training", "Childcare", "Parking", "24/7 access", "Women's-only area"]);
 

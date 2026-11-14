@@ -88,7 +88,7 @@ type Suggestion = {
 type PricingMode = "dayPass" | "membership";
 const GROUPS = {
   "Gym type": [
-    "Open",
+    "Traditional gym",
     "Personal training gym",
     "Group training gym",
     "Specialty gym/studio",
@@ -1701,12 +1701,13 @@ export function Card({
   hidePrice?: boolean;
   compact?: boolean;
 }) {
+  const gymType = g.type;
   return (
     <article
       onClick={select}
       className={`group cursor-pointer overflow-hidden border bg-white shadow-sm transition hover:-translate-y-0.5 dark:border-white/10 dark:bg-[#111411] ${compact ? "rounded-xl" : "rounded-2xl"} ${compareMode ? "gym-card-compare-wiggle" : ""} ${active || compared ? "!border-[#22c55e] ring-2 ring-[#22c55e]/25" : ""}`}
     >
-      <div className={`flex ${compact ? "h-[108px]" : "min-h-[148px]"}`}>
+      <div className={`flex ${compact ? "min-h-[108px]" : "min-h-[148px]"}`}>
         <div className="relative w-[35%] shrink-0 overflow-hidden bg-zinc-200">
           {g.photo ? (
             <img
@@ -1730,7 +1731,7 @@ export function Card({
         <div className="flex min-w-0 flex-1 flex-col justify-center p-4">
           <div className="flex justify-between gap-2">
             <div className="flex min-w-0 items-center gap-1.5">
-              <h2 className="truncate text-lg font-black">{g.name}</h2>
+              <h2 className="min-w-0 break-words text-lg font-black leading-tight">{g.name}</h2>
               {g.isVerified && <VerifiedBadge />}
             </div>
             {showFavorite &&
@@ -1765,7 +1766,9 @@ export function Card({
                 </button>
               ))}
           </div>
-          <p className="mt-1 line-clamp-2 text-xs text-zinc-500">{g.address}</p>
+          <p className="mt-1 truncate text-xs text-zinc-500">
+            {gymType}
+          </p>
           {!hidePrice && (
             <p className="mt-2">
               <b className="text-lg">{costText(g, pricingMode)}</b>

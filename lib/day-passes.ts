@@ -13,7 +13,7 @@ const createId = () => typeof globalThis.crypto?.randomUUID === "function"
   : `day-pass-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 export function emptyDayPassOption(): DayPassOption {
-  return { id: createId(), name: defaultDayPassOptionName(1), description: "", price: 0, durationDays: 1, purchaseUrl: "", access: [] };
+  return { id: createId(), name: "", description: "", price: 0, durationDays: 1, purchaseUrl: "", access: [] };
 }
 
 export function cleanDayPassOptions(value: unknown): DayPassOption[] {
@@ -52,9 +52,9 @@ export function dayPassDurationLabel(days: number) {
 export function defaultDayPassOptionName(days: number) {
   if (!Number.isInteger(days) || days < 1) return "Pass";
   const words = ["", "Single", "Two", "Three", "Four", "Five", "Six", "Seven"];
-  return `${words[days] || days}-day Pass`;
+  return `${words[days] || days}-Day Pass`;
 }
 
 export function dayPassOptionLabel(option: DayPassOption) {
-  return option.name.trim() || dayPassDurationLabel(option.durationDays);
+  return option.name.trim() || defaultDayPassOptionName(option.durationDays);
 }
