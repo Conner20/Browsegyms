@@ -330,7 +330,7 @@ export async function buildAdminMetricsWorkbook() {
   combinedFinancials.getColumn(14).hidden = true;
 
   const money = (value: number) => `$${value.toFixed(2)}`;
-  const gymListings = addTable("Gym Listings", ["Gym name", "Address", "City", "State", "Country", "Latitude", "Longitude", "Phone", "Email", "Website", "Gym type", "Hours", "Amenities", "Equipment", "Pass options", "Membership options", "Published", "Gym ID"]);
+  const gymListings = addTable("Gym Listings", ["Gym name", "Address", "City", "State", "Country", "Phone", "Email", "Website", "Gym type", "Hours", "Amenities", "Equipment", "Pass options", "Membership options", "Gym ID"]);
   for (const gym of gyms) {
     const dayPassOptions = cleanDayPassOptions(gym.dayPassOptions);
     if (!dayPassOptions.length && gym.dayPassPrice != null) dayPassOptions.push({ id: "legacy-day-pass", name: "Pass", description: "", price: gym.dayPassPrice, durationDays: Math.max(1, Number(gym.dayPassDetails) || 1), purchaseUrl: gym.dayPassUrl ?? "", access: gym.amenities });
@@ -354,9 +354,9 @@ export async function buildAdminMetricsWorkbook() {
       `Purchase URL: ${option.purchaseUrl || "Not provided"}`,
       `Notes: ${option.notes || "None"}`,
     ].join("\n")).join("\n\n");
-    gymListings.addRow([gym.name, gym.address, gym.city ?? "", gym.state ?? "", gym.country ?? "", gym.lat ?? "", gym.lng ?? "", gym.phone, gym.contactEmail ?? "", gym.website, gym.gymType ?? "", gym.hours ?? "", gym.amenities.join("\n"), gym.equipment.join("\n"), dayPassText, membershipText, gym.isPublished ? "Yes" : "No", gym.id]);
+    gymListings.addRow([gym.name, gym.address, gym.city ?? "", gym.state ?? "", gym.country ?? "", gym.phone, gym.contactEmail ?? "", gym.website, gym.gymType ?? "", gym.hours ?? "", gym.amenities.join("\n"), gym.equipment.join("\n"), dayPassText, membershipText, gym.id]);
   }
-  gymListings.getColumn(18).hidden = true;
+  gymListings.getColumn(15).hidden = true;
 
   summary.getCell("F1").value = "Period";
   summary.eachRow((row, index) => { if (index > 1) row.getCell(6).value = "Selectable"; });
