@@ -2934,7 +2934,7 @@ function Disclosure({
     <details className="group border-t border-white/[.08]">
       <summary className="flex cursor-pointer list-none items-center justify-between py-3 text-sm font-bold text-white/85 transition hover:text-white">
         {title}
-        <ChevronDown className="h-4 w-4 text-white/35 transition group-open:rotate-180 group-open:text-[#22c55e]" />
+        <ChevronDown className="h-4 w-4 text-white/35 transition group-open:rotate-180" />
       </summary>
       {children}
     </details>
