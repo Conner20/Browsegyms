@@ -375,9 +375,6 @@ export default function GymDiscoveryLanding({
         if (!searchOverride.current) {
           setOrigin(coords);
           setLocation("Current location");
-          window.dispatchEvent(
-            new CustomEvent("landing_location_changed", { detail: coords }),
-          );
           if (!recorded) {
             recorded = true;
             const place = await lookupCity(coords.lat, coords.lng);
@@ -1810,8 +1807,12 @@ function GymMap({
     userMarker = useRef<any>(null),
     referenceMarker = useRef<any>(null),
     selectRef = useRef(select),
-    markerInteraction = useRef<{ id: string; at: number } | null>(null);
+    markerInteraction = useRef<{ id: string; at: number } | null>(null),
+    mapInteraction = useRef({ active: false, suppressUntil: 0 }),
+    centeredOnce = useRef(false),
+    userNavigatedMap = useRef(false);
   const [ready, setReady] = useState(false),
+    [viewportRevision, setViewportRevision] = useState(0),
     [error, setError] = useState<string | null>(null),
     [referenceLocation, setReferenceLocation] = useState<{
       lat: number;
@@ -1859,6 +1860,21 @@ function GymMap({
           if (!markerTarget && window.innerWidth >= 768)
             selectRef.current(null);
         });
+        const beginMapInteraction = (event: any) => {
+          if (event.originalEvent) userNavigatedMap.current = true;
+          mapInteraction.current.active = true;
+          mapInteraction.current.suppressUntil = performance.now() + 350;
+        };
+        const finishMapInteraction = () => {
+          mapInteraction.current.active = false;
+          mapInteraction.current.suppressUntil = performance.now() + 250;
+          setViewportRevision((value) => value + 1);
+        };
+        // Leaflet emits move events for dragging, wheel zoom, pinch zoom, and
+        // programmatic pans. One listener pair avoids rebuilding markers three
+        // times for a single gesture.
+        map.current.on("movestart", beginMapInteraction);
+        map.current.on("moveend", finishMapInteraction);
         setReady(true);
         setError(null);
       })
@@ -1897,6 +1913,7 @@ function GymMap({
     let markerPress: { x: number; y: number; moved: boolean } | null = null;
     const pointerDown = (event: PointerEvent) => {
       if (window.innerWidth >= 768) return;
+      userNavigatedMap.current = true;
       const target = event.target;
       if (target instanceof Element && target.closest(".leaflet-marker-icon")) {
         markerPress = { x: event.clientX, y: event.clientY, moved: false };
@@ -1947,10 +1964,6 @@ function GymMap({
       !Number.isFinite(center.lng)
     )
       return;
-    if (window.innerWidth >= 768) {
-      map.current.setView([center.lat, center.lng], 13, { animate: true });
-      return;
-    }
     if (!visible) return;
     const frame = window.requestAnimationFrame(() => {
       const element = mapEl.current;
@@ -1970,51 +1983,27 @@ function GymMap({
         size.y <= 0
       )
         return;
-      map.current.flyTo([center.lat, center.lng], 13, {
-        animate: true,
-        duration: 0.5,
-        easeLinearity: 0.25,
-      });
+      if (!centeredOnce.current) {
+        centeredOnce.current = true;
+        map.current.setView([center.lat, center.lng], 13, { animate: false });
+      } else if (!userNavigatedMap.current) {
+        // Preserve the zoom chosen by the user. Geolocation watches can update
+        // before the user starts navigating, but must not pull the map back
+        // toward the location dot after the user pans or zooms away.
+        map.current.panTo([center.lat, center.lng], { animate: true, duration: 0.35 });
+      }
     });
     return () => window.cancelAnimationFrame(frame);
   }, [center.lat, center.lng, ready, visible]);
   useEffect(() => {
-    const animateToRequestedLocation = (event: Event) => {
+    const goToRequestedLocation = (event: Event) => {
       if (!visible || !map.current || !ready) return;
-      const detail = (event as CustomEvent<{ lat: number; lng: number }>)
-        .detail;
-      if (
-        !detail ||
-        !Number.isFinite(detail.lat) ||
-        !Number.isFinite(detail.lng)
-      )
-        return;
-      window.requestAnimationFrame(() => {
-        const element = mapEl.current;
-        if (
-          !map.current ||
-          !element ||
-          element.clientWidth <= 0 ||
-          element.clientHeight <= 0
-        )
-          return;
-        map.current.invalidateSize({ pan: false, animate: false });
-        map.current.flyTo([detail.lat, detail.lng], 13, {
-          animate: true,
-          duration: 0.5,
-          easeLinearity: 0.25,
-        });
-      });
+      const detail = (event as CustomEvent<{ lat: number; lng: number }>).detail;
+      if (!detail || !Number.isFinite(detail.lat) || !Number.isFinite(detail.lng)) return;
+      map.current.panTo([detail.lat, detail.lng], { animate: true, duration: 0.35 });
     };
-    window.addEventListener(
-      "landing_location_changed",
-      animateToRequestedLocation,
-    );
-    return () =>
-      window.removeEventListener(
-        "landing_location_changed",
-        animateToRequestedLocation,
-      );
+    window.addEventListener("landing_location_changed", goToRequestedLocation);
+    return () => window.removeEventListener("landing_location_changed", goToRequestedLocation);
   }, [ready, visible]);
   useEffect(() => {
     if (!map.current || !ready || !visible) return;
@@ -2039,8 +2028,34 @@ function GymMap({
     if (!map.current || !ready) return;
     import("leaflet").then(({ default: L }) => {
       markers.current.forEach((marker) => marker.remove());
-      markers.current = gyms.flatMap((g) => {
-        if (g.lat == null || g.lng == null) return [];
+      const bounds = map.current.getBounds().pad(0.12);
+      const zoom = map.current.getZoom();
+      const cellWidth = zoom >= 16 ? 42 : zoom >= 14 ? 54 : 68;
+      const cellHeight = zoom >= 16 ? 26 : zoom >= 14 ? 32 : 38;
+      const occupied = new Set<string>();
+      const selected = new Set(selectionKey.split("|").filter(Boolean));
+      const favoriteIds = new Set(favorites);
+      const candidates = gyms
+        .filter((gym) => gym.lat != null && gym.lng != null && bounds.contains([gym.lat, gym.lng]))
+        .sort((a, b) => {
+          const priority = (gym: LandingGym) => (selected.has(gym.id) ? 2 : favoriteIds.has(gym.id) ? 1 : 0);
+          // Keep the representative for an overlapping group deterministic so
+          // a pan cannot make nearby tags swap places.
+          return priority(b) - priority(a) || a.id.localeCompare(b.id);
+        })
+        .filter((gym) => {
+          if (selected.has(gym.id)) return true;
+          // World-pixel coordinates remain fixed while panning. Container
+          // coordinates move with the viewport and made overlap groups
+          // reshuffle every time the map was dragged.
+          const point = map.current.project([gym.lat, gym.lng], zoom);
+          const cell = `${Math.floor(point.x / cellWidth)}:${Math.floor(point.y / cellHeight)}`;
+          if (occupied.has(cell)) return false;
+          occupied.add(cell);
+          return true;
+        })
+        .slice(0, 240);
+      markers.current = candidates.flatMap((g) => {
         const favorite = favorites.includes(g.id),
           active = selectionKey.split("|").includes(g.id),
           width = favorite ? 96 : 76;
@@ -2053,7 +2068,7 @@ function GymMap({
           iconSize: [width, 42],
           iconAnchor: [width / 2, 38],
         });
-        const marker = L.marker([g.lat, g.lng], {
+        const marker = L.marker([g.lat!, g.lng!], {
           icon,
           title: g.name,
           bubblingMouseEvents: false,
@@ -2061,6 +2076,7 @@ function GymMap({
         }).addTo(map.current);
         const openProfile = (event: any) => {
           const now = performance.now();
+          if (mapInteraction.current.active || now < mapInteraction.current.suppressUntil) return;
           if (
             markerInteraction.current?.id === g.id &&
             now - markerInteraction.current.at < 400
@@ -2073,14 +2089,10 @@ function GymMap({
           selectRef.current(g.id);
         };
         marker.on("click", openProfile);
-        if (window.innerWidth < 768) {
-          const element = marker.getElement();
-          if (element) L.DomEvent.on(element, "pointerup", openProfile);
-        }
         return [marker];
       });
     });
-  }, [favorites, gyms, pricingMode, ready, selectionKey]);
+  }, [favorites, gyms, pricingMode, ready, selectionKey, viewportRevision]);
   useEffect(() => {
     if (!map.current || !ready) return;
     referenceMarker.current?.remove();
