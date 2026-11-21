@@ -2044,12 +2044,17 @@ function GymMap({
           return priority(b) - priority(a) || a.id.localeCompare(b.id);
         })
         .filter((gym) => {
-          if (selected.has(gym.id)) return true;
           // World-pixel coordinates remain fixed while panning. Container
           // coordinates move with the viewport and made overlap groups
           // reshuffle every time the map was dragged.
           const point = map.current.project([gym.lat, gym.lng], zoom);
           const cell = `${Math.floor(point.x / cellWidth)}:${Math.floor(point.y / cellHeight)}`;
+          // Selected gyms sort first, so reserving their normal overlap cell
+          // keeps the existing representative from appearing beside them.
+          if (selected.has(gym.id)) {
+            occupied.add(cell);
+            return true;
+          }
           if (occupied.has(cell)) return false;
           occupied.add(cell);
           return true;
