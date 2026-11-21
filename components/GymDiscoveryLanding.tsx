@@ -1809,6 +1809,7 @@ function GymMap({
     selectRef = useRef(select),
     markerInteraction = useRef<{ id: string; at: number } | null>(null),
     mapInteraction = useRef({ active: false, suppressUntil: 0 }),
+    markerTapAllowedUntil = useRef(0),
     centeredOnce = useRef(false),
     userNavigatedMap = useRef(false);
   const [ready, setReady] = useState(false),
@@ -1916,7 +1917,9 @@ function GymMap({
       userNavigatedMap.current = true;
       const target = event.target;
       if (target instanceof Element && target.closest(".leaflet-marker-icon")) {
-        markerPress = { x: event.clientX, y: event.clientY, moved: false };
+        markerPress = event.isPrimary
+          ? { x: event.clientX, y: event.clientY, moved: false }
+          : null;
         return;
       }
       markerPress = null;
@@ -1941,19 +1944,28 @@ function GymMap({
           event.clientY - markerPress.y,
         ) > 8;
       markerPress = null;
-      if (!dragged) return;
+      if (!dragged) {
+        // Leaflet can emit a tiny move at the edge of its viewport. Preserve a
+        // genuine stationary marker tap even if that move briefly activated
+        // the general pan/zoom click guard.
+        markerTapAllowedUntil.current = performance.now() + 400;
+        return;
+      }
       event.preventDefault();
       event.stopPropagation();
+    };
+    const pointerCancel = () => {
+      markerPress = null;
     };
     element.addEventListener("pointerdown", pointerDown, true);
     element.addEventListener("pointermove", pointerMove, true);
     element.addEventListener("pointerup", pointerUp, true);
-    element.addEventListener("pointercancel", pointerUp, true);
+    element.addEventListener("pointercancel", pointerCancel, true);
     return () => {
       element.removeEventListener("pointerdown", pointerDown, true);
       element.removeEventListener("pointermove", pointerMove, true);
       element.removeEventListener("pointerup", pointerUp, true);
-      element.removeEventListener("pointercancel", pointerUp, true);
+      element.removeEventListener("pointercancel", pointerCancel, true);
     };
   }, []);
   useEffect(() => {
@@ -2081,7 +2093,13 @@ function GymMap({
         }).addTo(map.current);
         const openProfile = (event: any) => {
           const now = performance.now();
-          if (mapInteraction.current.active || now < mapInteraction.current.suppressUntil) return;
+          const stationaryMobileTap = now < markerTapAllowedUntil.current;
+          if (
+            !stationaryMobileTap &&
+            (mapInteraction.current.active ||
+              (window.innerWidth < 768 && now < mapInteraction.current.suppressUntil))
+          )
+            return;
           if (
             markerInteraction.current?.id === g.id &&
             now - markerInteraction.current.at < 400
@@ -2189,7 +2207,7 @@ function ProfileTray({
   const mobileOpenCycle = useRef(0),
     previousFirstPanelId = useRef<string | null>(null);
   const [renderedPanels, setRenderedPanels] = useState(panels);
-  const [mobileReadyId, setMobileReadyId] = useState<string | null>(null);
+  const [mobilePanelLimit, setMobilePanelLimit] = useState(1);
   const mobileViewport =
       typeof window !== "undefined" && window.innerWidth < 768,
     firstPanelId = panels[0]?.id ?? null;
@@ -2197,9 +2215,7 @@ function ProfileTray({
     mobileOpenCycle.current += 1;
   previousFirstPanelId.current = firstPanelId;
   const visiblePanels = mobileViewport
-    ? mobileReadyId === firstPanelId
-      ? panels
-      : panels.slice(0, 1)
+    ? panels.slice(0, mobilePanelLimit)
     : panels.length
       ? panels
       : renderedPanels;
@@ -2213,14 +2229,16 @@ function ProfileTray({
   }, [panels]);
   useEffect(() => {
     if (!mobileViewport || !firstPanelId) {
-      setMobileReadyId(null);
+      setMobilePanelLimit(1);
       return;
     }
-    const frame = window.requestAnimationFrame(() =>
-      setMobileReadyId(firstPanelId),
-    );
+    setMobilePanelLimit(1);
+    // Mount the selected profile first so opening from a map marker remains
+    // responsive. Add only a few neighbors on the next frame; the rest are
+    // loaded progressively as the carousel is swiped.
+    const frame = window.requestAnimationFrame(() => setMobilePanelLimit(Math.min(4, panels.length)));
     return () => window.cancelAnimationFrame(frame);
-  }, [firstPanelId, mobileViewport]);
+  }, [firstPanelId, mobileViewport, panels.length]);
   useEffect(() => {
     trayRef.current?.scrollTo({ left: 0 });
   }, [panels[0]?.id]);
@@ -2231,6 +2249,14 @@ function ProfileTray({
       onScroll={(event) => {
         if (swipeHint && Math.abs(event.currentTarget.scrollLeft) > 12)
           onSwipeHintDismiss?.();
+        if (
+          mobileViewport &&
+          mobilePanelLimit < panels.length &&
+          event.currentTarget.scrollLeft + event.currentTarget.clientWidth >=
+            event.currentTarget.scrollWidth - event.currentTarget.clientWidth
+        ) {
+          setMobilePanelLimit((current) => Math.min(current + 3, panels.length));
+        }
       }}
       className={`gym-profile-carousel ${swipeHint ? "gym-profile-swipe-tutorial" : ""} scrollbar-slim absolute bottom-3 right-3 top-3 z-[1000] flex max-w-[calc(100%-1.5rem)] gap-3 overflow-x-auto rounded-2xl border border-white/10 bg-[#090b09]/95 p-3 shadow-2xl backdrop-blur-xl transition-[transform,opacity] duration-300 ease-out ${panels.length ? "pointer-events-auto translate-x-0 opacity-100" : "pointer-events-none translate-x-[105%] opacity-0"}`}
     >
