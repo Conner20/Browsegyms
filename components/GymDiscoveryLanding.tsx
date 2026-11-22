@@ -253,6 +253,8 @@ export default function GymDiscoveryLanding({
     [favorites, setFavorites] = useState<string[]>([]),
     [favoritesOnly, setFavoritesOnly] = useState(false),
     [visibleGymCount, setVisibleGymCount] = useState(9),
+    [mapVisibleGymIds, setMapVisibleGymIds] = useState<string[] | null>(null),
+    [mapBoundsGymIds, setMapBoundsGymIds] = useState<string[] | null>(null),
     [listWidth, setListWidth] = useState(510),
     [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(
       null,
@@ -707,7 +709,47 @@ export default function GymDiscoveryLanding({
       sort,
     ],
   );
-  const visibleGyms = gyms.slice(0, visibleGymCount);
+  const filterCeilingGyms = useMemo(
+    () =>
+      all
+        .map((gym) => ({
+          ...gym,
+          distance:
+            gym.lat != null && gym.lng != null
+              ? Number(miles(origin, { lat: gym.lat, lng: gym.lng }).toFixed(1))
+              : (gym.distance ?? 0),
+        }))
+        .filter(
+          (gym) =>
+            (pricingMode === "dayPass"
+              ? dayPassOptionsFor(gym).length > 0
+              : membershipOptionsFor(gym).length > 0) &&
+            (!favoritesOnly || favorites.includes(gym.id)) &&
+            (filters.filter((filter) => GROUPS["Gym type"].includes(filter)).length === 0 ||
+              filters
+                .filter((filter) => GROUPS["Gym type"].includes(filter))
+                .some((filter) => gym.type.toLowerCase() === filter.toLowerCase())) &&
+            equipmentFilters.every((filter) => gym.equipment.some((value) => value.toLowerCase().includes(filter.toLowerCase()))) &&
+            amenityFilters.every((filter) => gym.amenities.some((value) => value.toLowerCase().includes(filter.toLowerCase()))),
+        ),
+    [all, amenityFilters, equipmentFilters, favorites, favoritesOnly, filters, origin, pricingMode],
+  );
+  const gymsInMap = mapVisibleGymIds === null
+    ? gyms
+    : gyms.filter((gym) => mapVisibleGymIds.includes(gym.id));
+  const matchingGymsInBounds = mapBoundsGymIds === null
+    ? gyms
+    : gyms.filter((gym) => mapBoundsGymIds.includes(gym.id));
+  const gymsInMapBounds = mapBoundsGymIds === null
+    ? filterCeilingGyms
+    : filterCeilingGyms.filter((gym) => mapBoundsGymIds.includes(gym.id));
+  const mapMaxDistance = Number(
+    Math.max(0, ...gymsInMapBounds.map((gym) => gym.distance)).toFixed(1),
+  );
+  const mapMaxPrice = Math.ceil(
+    Math.max(0, ...gymsInMapBounds.map((gym) => cost(gym, pricingMode))),
+  );
+  const visibleGyms = gymsInMap.slice(0, visibleGymCount);
   useEffect(() => {
     setVisibleGymCount(9);
     listRef.current?.scrollTo({ top: 0 });
@@ -715,17 +757,17 @@ export default function GymDiscoveryLanding({
   useEffect(() => {
     const root = listRef.current,
       target = listLoadMoreRef.current;
-    if (!root || !target || visibleGymCount >= gyms.length) return;
+    if (!root || !target || visibleGymCount >= gymsInMap.length) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting)
-          setVisibleGymCount((current) => Math.min(current + 9, gyms.length));
+          setVisibleGymCount((current) => Math.min(current + 9, gymsInMap.length));
       },
       { root, rootMargin: "250px 0px" },
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [gyms.length, visibleGymCount]);
+  }, [gymsInMap.length, visibleGymCount]);
   const choose = (p: Suggestion) => {
     dismissMobileKeyboard();
     searchOverride.current = true;
@@ -1283,13 +1325,13 @@ export default function GymDiscoveryLanding({
                 toggleFavorite={() => favorite(g.id)}
               />
             ))}
-            {!gyms.length && (
+            {!gymsInMap.length && (
               <div className="rounded-2xl border p-8 text-center">
                 <Dumbbell className="mx-auto" />
                 <b>No exact matches</b>
               </div>
             )}
-            {visibleGymCount < gyms.length && (
+            {visibleGymCount < gymsInMap.length && (
               <div
                 ref={listLoadMoreRef}
                 aria-hidden="true"
@@ -1307,10 +1349,25 @@ export default function GymDiscoveryLanding({
             visible={!isPhoneViewport || mobile === "map"}
             pricingMode={pricingMode}
             gyms={gyms}
+            boundsGyms={filterCeilingGyms}
             selectedIds={panels.map((panel) => panel.id)}
             favorites={favorites}
             userCoords={userCoords}
             center={origin}
+            onVisibleGymIdsChange={(ids) =>
+              setMapVisibleGymIds((current) =>
+                current && current.length === ids.length && current.every((id, index) => id === ids[index])
+                  ? current
+                  : ids,
+              )
+            }
+            onBoundsGymIdsChange={(ids) =>
+              setMapBoundsGymIds((current) =>
+                current && current.length === ids.length && current.every((id, index) => id === ids[index])
+                  ? current
+                  : ids,
+              )
+            }
             select={(id) => {
               if (id === null) {
                 setSelected(null);
@@ -1508,9 +1565,9 @@ export default function GymDiscoveryLanding({
           pricingMode={pricingMode}
           radius={radius}
           limit={limit}
-          maxRadius={maxDistance}
-          maxLimit={maxPrice}
-          resultCount={gyms.length}
+          maxRadius={mapMaxDistance}
+          maxLimit={mapMaxPrice}
+          resultCount={matchingGymsInBounds.length}
           setRadius={setRadius}
           setLimit={setLimit}
           filters={filters}
@@ -1786,19 +1843,25 @@ function GymMap({
   visible,
   pricingMode,
   gyms,
+  boundsGyms,
   selectedIds,
   favorites,
   userCoords,
   center,
+  onVisibleGymIdsChange,
+  onBoundsGymIdsChange,
   select,
 }: {
   visible: boolean;
   pricingMode: PricingMode;
   gyms: LandingGym[];
+  boundsGyms: LandingGym[];
   selectedIds: string[];
   favorites: string[];
   userCoords: { lat: number; lng: number } | null;
   center: { lat: number; lng: number };
+  onVisibleGymIdsChange: (ids: string[]) => void;
+  onBoundsGymIdsChange: (ids: string[]) => void;
   select: (id: string | null) => void;
 }) {
   const mapEl = useRef<HTMLDivElement>(null),
@@ -1807,10 +1870,13 @@ function GymMap({
     userMarker = useRef<any>(null),
     referenceMarker = useRef<any>(null),
     selectRef = useRef(select),
+    visibleGymIdsRef = useRef(onVisibleGymIdsChange),
+    boundsGymIdsRef = useRef(onBoundsGymIdsChange),
     markerInteraction = useRef<{ id: string; at: number } | null>(null),
     mapInteraction = useRef({ active: false, suppressUntil: 0 }),
     markerTapAllowedUntil = useRef(0),
     centeredOnce = useRef(false),
+    initialBoundsFit = useRef(false),
     userNavigatedMap = useRef(false);
   const [ready, setReady] = useState(false),
     [viewportRevision, setViewportRevision] = useState(0),
@@ -1826,6 +1892,12 @@ function GymMap({
   useEffect(() => {
     selectRef.current = select;
   }, [select]);
+  useEffect(() => {
+    visibleGymIdsRef.current = onVisibleGymIdsChange;
+  }, [onVisibleGymIdsChange]);
+  useEffect(() => {
+    boundsGymIdsRef.current = onBoundsGymIdsChange;
+  }, [onBoundsGymIdsChange]);
   useEffect(() => {
     let dead = false;
     import("leaflet")
@@ -2037,10 +2109,28 @@ function GymMap({
     return () => observer.disconnect();
   }, [ready]);
   useEffect(() => {
-    if (!map.current || !ready) return;
+    if (!map.current || !ready || !visible) return;
     import("leaflet").then(({ default: L }) => {
       markers.current.forEach((marker) => marker.remove());
-      const bounds = map.current.getBounds().pad(0.12);
+      const locatedGyms = gyms.filter((gym) => gym.lat != null && gym.lng != null);
+      if (!initialBoundsFit.current && locatedGyms.length) {
+        initialBoundsFit.current = true;
+        // Once all matching gyms are framed, background GPS updates should
+        // move only the location dot—not replace this overview viewport.
+        userNavigatedMap.current = true;
+        const initialBounds = L.latLngBounds(locatedGyms.map((gym) => [gym.lat!, gym.lng!]));
+        map.current.fitBounds(initialBounds, {
+          animate: false,
+          padding: window.innerWidth < 768 ? [24, 24] : [48, 48],
+          maxZoom: 13,
+        });
+      }
+      const bounds = map.current.getBounds();
+      boundsGymIdsRef.current(
+        boundsGyms
+          .filter((gym) => gym.lat != null && gym.lng != null && bounds.contains([gym.lat, gym.lng]))
+          .map((gym) => gym.id),
+      );
       const zoom = map.current.getZoom();
       const cellWidth = zoom >= 16 ? 42 : zoom >= 14 ? 54 : 68;
       const cellHeight = zoom >= 16 ? 26 : zoom >= 14 ? 32 : 38;
@@ -2072,6 +2162,7 @@ function GymMap({
           return true;
         })
         .slice(0, 240);
+      visibleGymIdsRef.current(candidates.map((gym) => gym.id));
       markers.current = candidates.flatMap((g) => {
         const favorite = favorites.includes(g.id),
           active = selectionKey.split("|").includes(g.id),
@@ -2115,7 +2206,7 @@ function GymMap({
         return [marker];
       });
     });
-  }, [favorites, gyms, pricingMode, ready, selectionKey, viewportRevision]);
+  }, [boundsGyms, favorites, gyms, pricingMode, ready, selectionKey, viewportRevision, visible]);
   useEffect(() => {
     if (!map.current || !ready) return;
     referenceMarker.current?.remove();
@@ -3085,32 +3176,34 @@ function Filters({
   apply: () => void;
   clear: () => void;
 }) {
+  const displayedRadius = Math.min(radius, maxRadius);
+  const displayedLimit = Math.min(limit, maxLimit);
   return (
     <Shell close={close} fixedFooter>
       <Top title="Filters" close={close} />
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto p-6 text-white">
         <label className="block font-black">
-          Distance · {Number(radius.toFixed(1))} miles
+          Distance · {Number(displayedRadius.toFixed(1))} miles
           <input
             className="mt-3 w-full accent-[#22c55e]"
             type="range"
             min="0"
             max={maxRadius}
             step="0.1"
-            value={Math.min(radius, maxRadius)}
+            value={displayedRadius}
             onChange={(e) => setRadius(+e.target.value)}
           />
         </label>
         <label className="block font-black">
           {pricingMode === "membership" ? "Membership price" : "Pass price"}{" "}
-          · {money(limit)}
+          · {money(displayedLimit)}{pricingMode === "membership" ? "/month" : ""}
           <input
             className="mt-3 w-full accent-[#22c55e]"
             type="range"
             min="0"
             max={maxLimit}
             step="1"
-            value={Math.min(limit, maxLimit)}
+            value={displayedLimit}
             onChange={(e) => setLimit(+e.target.value)}
           />
         </label>
