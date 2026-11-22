@@ -253,7 +253,6 @@ export default function GymDiscoveryLanding({
     [favorites, setFavorites] = useState<string[]>([]),
     [favoritesOnly, setFavoritesOnly] = useState(false),
     [visibleGymCount, setVisibleGymCount] = useState(9),
-    [mapVisibleGymIds, setMapVisibleGymIds] = useState<string[] | null>(null),
     [mapBoundsGymIds, setMapBoundsGymIds] = useState<string[] | null>(null),
     [listWidth, setListWidth] = useState(510),
     [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(
@@ -734,9 +733,6 @@ export default function GymDiscoveryLanding({
         ),
     [all, amenityFilters, equipmentFilters, favorites, favoritesOnly, filters, origin, pricingMode],
   );
-  const gymsInMap = mapVisibleGymIds === null
-    ? gyms
-    : gyms.filter((gym) => mapVisibleGymIds.includes(gym.id));
   const matchingGymsInBounds = mapBoundsGymIds === null
     ? gyms
     : gyms.filter((gym) => mapBoundsGymIds.includes(gym.id));
@@ -749,7 +745,7 @@ export default function GymDiscoveryLanding({
   const mapMaxPrice = Math.ceil(
     Math.max(0, ...gymsInMapBounds.map((gym) => cost(gym, pricingMode))),
   );
-  const visibleGyms = gymsInMap.slice(0, visibleGymCount);
+  const visibleGyms = matchingGymsInBounds.slice(0, visibleGymCount);
   useEffect(() => {
     setVisibleGymCount(9);
     listRef.current?.scrollTo({ top: 0 });
@@ -757,17 +753,17 @@ export default function GymDiscoveryLanding({
   useEffect(() => {
     const root = listRef.current,
       target = listLoadMoreRef.current;
-    if (!root || !target || visibleGymCount >= gymsInMap.length) return;
+    if (!root || !target || visibleGymCount >= matchingGymsInBounds.length) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting)
-          setVisibleGymCount((current) => Math.min(current + 9, gymsInMap.length));
+          setVisibleGymCount((current) => Math.min(current + 9, matchingGymsInBounds.length));
       },
       { root, rootMargin: "250px 0px" },
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [gymsInMap.length, visibleGymCount]);
+  }, [matchingGymsInBounds.length, visibleGymCount]);
   const choose = (p: Suggestion) => {
     dismissMobileKeyboard();
     searchOverride.current = true;
@@ -1325,13 +1321,13 @@ export default function GymDiscoveryLanding({
                 toggleFavorite={() => favorite(g.id)}
               />
             ))}
-            {!gymsInMap.length && (
+            {!matchingGymsInBounds.length && (
               <div className="rounded-2xl border p-8 text-center">
                 <Dumbbell className="mx-auto" />
                 <b>No exact matches</b>
               </div>
             )}
-            {visibleGymCount < gymsInMap.length && (
+            {visibleGymCount < matchingGymsInBounds.length && (
               <div
                 ref={listLoadMoreRef}
                 aria-hidden="true"
@@ -1354,13 +1350,6 @@ export default function GymDiscoveryLanding({
             favorites={favorites}
             userCoords={userCoords}
             center={origin}
-            onVisibleGymIdsChange={(ids) =>
-              setMapVisibleGymIds((current) =>
-                current && current.length === ids.length && current.every((id, index) => id === ids[index])
-                  ? current
-                  : ids,
-              )
-            }
             onBoundsGymIdsChange={(ids) =>
               setMapBoundsGymIds((current) =>
                 current && current.length === ids.length && current.every((id, index) => id === ids[index])
@@ -1848,7 +1837,6 @@ function GymMap({
   favorites,
   userCoords,
   center,
-  onVisibleGymIdsChange,
   onBoundsGymIdsChange,
   select,
 }: {
@@ -1860,7 +1848,6 @@ function GymMap({
   favorites: string[];
   userCoords: { lat: number; lng: number } | null;
   center: { lat: number; lng: number };
-  onVisibleGymIdsChange: (ids: string[]) => void;
   onBoundsGymIdsChange: (ids: string[]) => void;
   select: (id: string | null) => void;
 }) {
@@ -1870,7 +1857,6 @@ function GymMap({
     userMarker = useRef<any>(null),
     referenceMarker = useRef<any>(null),
     selectRef = useRef(select),
-    visibleGymIdsRef = useRef(onVisibleGymIdsChange),
     boundsGymIdsRef = useRef(onBoundsGymIdsChange),
     markerInteraction = useRef<{ id: string; at: number } | null>(null),
     mapInteraction = useRef({ active: false, suppressUntil: 0 }),
@@ -1892,9 +1878,6 @@ function GymMap({
   useEffect(() => {
     selectRef.current = select;
   }, [select]);
-  useEffect(() => {
-    visibleGymIdsRef.current = onVisibleGymIdsChange;
-  }, [onVisibleGymIdsChange]);
   useEffect(() => {
     boundsGymIdsRef.current = onBoundsGymIdsChange;
   }, [onBoundsGymIdsChange]);
@@ -2162,7 +2145,6 @@ function GymMap({
           return true;
         })
         .slice(0, 240);
-      visibleGymIdsRef.current(candidates.map((gym) => gym.id));
       markers.current = candidates.flatMap((g) => {
         const favorite = favorites.includes(g.id),
           active = selectionKey.split("|").includes(g.id),
